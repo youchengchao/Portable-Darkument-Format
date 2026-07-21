@@ -1,0 +1,414 @@
+/* Enhanced PDF Viewer Style */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg-workspace: #09090b;
+  --bg-toolbar: rgba(18, 18, 24, 0.85);
+  --bg-card: #181825;
+  --border-color: #27273a;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --accent-color: #8b5cf6;
+  --btn-hover: #2e2e42;
+  --page-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+body, html {
+  height: 100%;
+  background-color: var(--bg-workspace);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+#viewer-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Toolbar Style */
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 56px;
+  padding: 0 16px;
+  background-color: var(--bg-toolbar);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-color);
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.toolbar-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar-section.center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.doc-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:hover {
+  background-color: var(--btn-hover);
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.divider {
+  width: 1px;
+  height: 24px;
+  background-color: var(--border-color);
+  margin: 0 4px;
+}
+
+.zoom-value {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 48px;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.page-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-indicator {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+#current-page {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.theme-badge {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background-color: rgba(139, 92, 246, 0.15);
+  color: var(--accent-color);
+  padding: 4px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+/* View Area */
+#pdf-view-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  scroll-behavior: smooth;
+}
+
+/* Scrollbar Customization */
+#pdf-view-area::-webkit-scrollbar {
+  width: 10px;
+}
+
+#pdf-view-area::-webkit-scrollbar-track {
+  background: var(--bg-workspace);
+}
+
+#pdf-view-area::-webkit-scrollbar-thumb {
+  background: #272730;
+  border-radius: 5px;
+}
+
+#pdf-view-area::-webkit-scrollbar-thumb:hover {
+  background: #3e3e4f;
+}
+
+/* Page Wrapper */
+.page-wrapper {
+  position: relative;
+  margin-bottom: 24px;
+  background-color: #ffffff; /* Page starts white, gets filtered */
+  box-shadow: var(--page-shadow);
+  border-radius: 4px;
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+
+.page-wrapper:hover {
+  transform: translateY(-2px);
+}
+
+/* The Canvas itself */
+.pdf-page-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  /* Filter variables applied dynamically via JS */
+  filter: none;
+  transition: filter 0.15s ease;
+}
+
+/* Spinner Loader */
+.spinner-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin-top: 100px;
+  gap: 16px;
+  color: var(--text-secondary);
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(139, 92, 246, 0.1);
+  border-radius: 50%;
+  border-top-color: var(--accent-color);
+  animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Annotation Sub-Toolbar */
+.annotation-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 48px;
+  padding: 0 16px;
+  background-color: #12121b;
+  border-bottom: 1px solid var(--border-color);
+  z-index: 9;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.annotation-bar.hidden {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.bar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bar-divider {
+  width: 1px;
+  height: 18px;
+  background-color: var(--border-color);
+}
+
+.bar-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.03em;
+}
+
+/* Sub-toolbar buttons */
+.bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background-color: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bar-btn:hover {
+  background-color: var(--btn-hover);
+  color: var(--text-primary);
+}
+
+.bar-btn.active {
+  background-color: rgba(139, 92, 246, 0.15);
+  border-color: var(--accent-color);
+  color: var(--text-primary);
+}
+
+/* Color Picker */
+.color-picker {
+  display: flex;
+  gap: 6px;
+}
+
+.color-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.color-dot:hover {
+  transform: scale(1.15);
+}
+
+.color-dot.active {
+  border: 2px solid var(--text-primary);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+}
+
+/* Annotation Layer Elements */
+.annotation-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Active annotation mode adjustments */
+.page-wrapper.annotating-draw {
+  cursor: crosshair;
+}
+.page-wrapper.annotating-text {
+  cursor: text;
+}
+
+.drawing-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  pointer-events: none; /* Controlled via JS */
+}
+
+/* Text Annotation Boxes */
+.text-annotation {
+  position: absolute;
+  background: transparent;
+  border: 1px dashed transparent;
+  color: #ef4444; /* color updated via color picker */
+  padding: 2px 4px;
+  font-size: 14px;
+  font-weight: 500;
+  outline: none;
+  min-width: 60px;
+  min-height: 20px;
+  cursor: text;
+  pointer-events: auto;
+  z-index: 10;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.text-annotation:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.text-annotation:focus {
+  border-color: var(--accent-color) !important;
+  background: rgba(139, 92, 246, 0.08) !important;
+  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.2);
+}
+
+.text-annotation:empty::before {
+  content: 'Type text...';
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
+/* Text Selection Layer */
+.textLayer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  z-index: 4;
+  pointer-events: auto;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+
+.textLayer span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  pointer-events: auto;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+}
+
+.textLayer span::selection {
+  background-color: rgba(139, 92, 246, 0.45) !important;
+  color: transparent;
+}

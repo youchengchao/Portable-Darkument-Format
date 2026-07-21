@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enhanced PDF Viewer</title>
+  <link rel="stylesheet" href="viewer.css">
+  <!-- Load local PDF.js -->
+  <script src="pdfjs/pdf.js"></script>
+</head>
+<body>
+  <div id="viewer-container">
+    <!-- Toolbar -->
+    <header class="toolbar">
+      <div class="toolbar-section left">
+        <button id="btn-back" class="btn" title="Exit to native viewer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <span id="doc-title" class="doc-title">Loading PDF...</span>
+      </div>
+      
+      <div class="toolbar-section center">
+        <button id="btn-zoom-out" class="btn" title="Zoom Out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        <span id="zoom-value" class="zoom-value">100%</span>
+        <button id="btn-zoom-in" class="btn" title="Zoom In">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        <div class="divider"></div>
+        <div class="page-nav">
+          <button id="btn-prev-page" class="btn" title="Previous Page">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+          <span class="page-indicator">
+            Page <span id="current-page">1</span> of <span id="total-pages">1</span>
+          </span>
+          <button id="btn-next-page" class="btn" title="Next Page">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="toolbar-section right">
+        <!-- Annotation toggle button -->
+        <button id="btn-toggle-annotate" class="btn" title="Annotate / Drawing Tools">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"></path>
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+          </svg>
+        </button>
+        <!-- Theme indicator -->
+        <span id="theme-badge" class="theme-badge">Dark</span>
+        <!-- Settings button -->
+        <button id="btn-settings" class="btn" title="Open Settings Extension Popup">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Annotation Sub-Toolbar (Initially hidden) -->
+    <div id="annotation-bar" class="annotation-bar hidden">
+      <div class="bar-group">
+        <button id="btn-tool-select" class="bar-btn active" title="Select / Pan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+            <polyline points="22 7 10 19 2 11"></polyline>
+          </svg>
+          <span>Select</span>
+        </button>
+        <button id="btn-tool-draw" class="bar-btn" title="Freehand Draw / Pen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+            <path d="M12 20h9"></path>
+            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+          </svg>
+          <span>Pen</span>
+        </button>
+        <button id="btn-tool-text" class="bar-btn" title="Click-to-Type Text">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+            <polyline points="4 7 4 4 20 4 20 7"></polyline>
+            <line x1="9" y1="20" x2="15" y2="20"></line>
+            <line x1="12" y1="4" x2="12" y2="20"></line>
+          </svg>
+          <span>Text</span>
+        </button>
+      </div>
+
+      <div class="bar-divider"></div>
+
+      <div class="bar-group">
+        <span class="bar-label">Color:</span>
+        <div class="color-picker">
+          <button class="color-dot active" data-color="#ef4444" style="background-color: #ef4444;" title="Red"></button>
+          <button class="color-dot" data-color="#eab308" style="background-color: #eab308;" title="Yellow"></button>
+          <button class="color-dot" data-color="#3b82f6" style="background-color: #3b82f6;" title="Blue"></button>
+          <button class="color-dot" data-color="#10b981" style="background-color: #10b981;" title="Green"></button>
+          <button class="color-dot" data-color="#ffffff" style="background-color: #ffffff;" title="White/Eraser"></button>
+        </div>
+      </div>
+
+      <div class="bar-divider"></div>
+
+      <div class="bar-group">
+        <span class="bar-label">Thickness:</span>
+        <input type="range" id="pen-size" min="1" max="15" value="3" style="width: 70px;">
+        <span id="pen-size-value" style="font-size: 11px; min-width: 12px; text-align: right; color: var(--text-secondary);">3px</span>
+      </div>
+
+      <div class="bar-divider"></div>
+
+      <button id="btn-clear-page" class="btn" title="Clear all annotations on current page" style="font-size: 11px; padding: 0 10px; width: auto; height: 28px;">
+        Clear Page
+      </button>
+    </div>
+
+    <!-- PDF Pages Display Area -->
+    <main id="pdf-view-area">
+      <!-- Loading indicator -->
+      <div id="loading-spinner" class="spinner-container">
+        <div class="spinner"></div>
+        <p>Rendering document...</p>
+      </div>
+      <!-- Pages will be dynamically appended here -->
+      <div id="pages-container"></div>
+    </main>
+  </div>
+  <script src="viewer.js"></script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Dark Mode Settings</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="logo-area">
+        <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+          <polyline points="10 9 9 9 8 9"></polyline>
+        </svg>
+        <h1>PDF Dark</h1>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="master-toggle" checked>
+        <span class="slider round"></span>
+      </label>
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content">
+      <!-- Mode Selection -->
+      <section class="section">
+        <h2 class="section-title">Rendering Mode</h2>
+        <div class="mode-selector">
+          <label class="mode-card">
+            <input type="radio" name="rendering-mode" value="classic" checked>
+            <div class="mode-card-content">
+              <span class="mode-title">Classic Mode</span>
+              <span class="mode-desc">Fast, standard CSS inversion. Works on native viewer.</span>
+            </div>
+          </label>
+          <label class="mode-card">
+            <input type="radio" name="rendering-mode" value="enhanced">
+            <div class="mode-card-content">
+              <span class="mode-title">Enhanced Mode</span>
+              <span class="mode-desc">Uses PDF.js. Beautiful render, keeps image colors original.</span>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <!-- Theme Selection -->
+      <section class="section" id="theme-section">
+        <h2 class="section-title">Color Theme</h2>
+        <div class="theme-grid">
+          <label class="theme-option" data-theme="dark">
+            <input type="radio" name="color-theme" value="dark" checked>
+            <div class="theme-box theme-dark"></div>
+            <span>Dark</span>
+          </label>
+          <label class="theme-option" data-theme="warm">
+            <input type="radio" name="color-theme" value="warm">
+            <div class="theme-box theme-warm"></div>
+            <span>Warm</span>
+          </label>
+          <label class="theme-option" data-theme="cool">
+            <input type="radio" name="color-theme" value="cool">
+            <div class="theme-box theme-cool"></div>
+            <span>Cool</span>
+          </label>
+          <label class="theme-option" data-theme="sepia">
+            <input type="radio" name="color-theme" value="sepia">
+            <div class="theme-box theme-sepia"></div>
+            <span>Sepia</span>
+          </label>
+          <label class="theme-option" data-theme="mono">
+            <input type="radio" name="color-theme" value="mono">
+            <div class="theme-box theme-mono"></div>
+            <span>Mono</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Sliders / Fine Adjustments -->
+      <section class="section">
+        <h2 class="section-title">Adjustments</h2>
+        <div class="adjustments-panel">
+          <!-- Brightness -->
+          <div class="slider-group">
+            <div class="slider-label-row">
+              <span>Brightness</span>
+              <span class="slider-value" id="brightness-val">90%</span>
+            </div>
+            <input type="range" id="slider-brightness" min="50" max="150" value="90">
+          </div>
+
+          <!-- Contrast -->
+          <div class="slider-group">
+            <div class="slider-label-row">
+              <span>Contrast</span>
+              <span class="slider-value" id="contrast-val">100%</span>
+            </div>
+            <input type="range" id="slider-contrast" min="50" max="150" value="100">
+          </div>
+
+          <!-- Grayscale -->
+          <div class="slider-group">
+            <div class="slider-label-row">
+              <span>Grayscale</span>
+              <span class="slider-value" id="grayscale-val">0%</span>
+            </div>
+            <input type="range" id="slider-grayscale" min="0" max="100" value="0">
+          </div>
+        </div>
+      </section>
+      
+      <!-- Support / Note info for File URLs -->
+      <div class="info-box" id="file-url-warning">
+        <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <div class="info-text">
+          <strong>Local Files:</strong> To use this on local PDFs, open <em>chrome://extensions</em>, click <strong>Details</strong> on this extension, and enable <strong>"Allow access to file URLs"</strong>.
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+      <span class="version">v1.0.0</span>
+      <a href="#" id="reset-settings" class="reset-link">Reset Defaults</a>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
