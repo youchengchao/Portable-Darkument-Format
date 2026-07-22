@@ -434,8 +434,20 @@ function setupTabSwitching() {
   if (typeof document === 'undefined') return;
   const tabBtns = document.querySelectorAll('.popup-tab-btn');
   const tabPanes = document.querySelectorAll('.tab-pane');
+  const btnPopupOpenFile = document.getElementById('btn-popup-open-file');
+
+  if (btnPopupOpenFile) {
+    btnPopupOpenFile.addEventListener('click', () => {
+      if (typeof chrome !== 'undefined' && chrome.tabs && chrome.runtime) {
+        chrome.tabs.create({ url: chrome.runtime.getURL('viewer.html') });
+      } else {
+        window.open('viewer.html', '_blank');
+      }
+    });
+  }
 
   tabBtns.forEach(btn => {
+
     btn.addEventListener('click', () => {
       const targetTab = btn.dataset.tab;
       tabBtns.forEach(b => b.classList.remove('active'));

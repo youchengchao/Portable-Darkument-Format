@@ -54,9 +54,14 @@ if (typeof document !== 'undefined' && document.addEventListener) {
     pdfUrl = urlParams.get('file');
 
     if (!pdfUrl) {
-      showError('No PDF file specified.');
+      if (loadingSpinner) loadingSpinner.style.display = 'none';
+      const dropzone = document.getElementById('dropzone-overlay');
+      if (dropzone) dropzone.classList.remove('hidden');
+      setupEventListeners();
+      setupFileOpenAndDragDropListeners();
       return;
     }
+
 
     // Set document title
     try {
@@ -1427,6 +1432,10 @@ function setupEventListeners() {
   // --- GLOBAL KEYBOARD NAVIGATION LISTENERS ---
   setupKeyboardShortcuts();
 
+  // --- FILE OPEN & DRAG AND DROP LISTENERS ---
+  setupFileOpenAndDragDropListeners();
+
+
 
   // Next Page
   btnNextPage.addEventListener('click', () => {
@@ -2242,6 +2251,57 @@ function setupSettingsModalListeners() {
   }
 }
 
+function loadPdfFileFromDisk(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    const arrayBuffer = evt.target.result;
+    pdfUrl = file.name;
+    if (docTitle) docTitle.textContent = file.name;
+    document.title = file.name;
+    const dropzone = document.getElementById('dropzone-overlay');
+    if (dropzone) dropzone.classList.add('hidden');
+    loadPdfFromData(arrayBuffer);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function setupFileOpenAndDragDropListeners() {
+  if (typeof document === 'undefined') return;
+  const btnOpenFile = document.getElementById('btn-open-file');
+  const btnDropzoneOpen = document.getElementById('btn-dropzone-open');
+  const fileInputPdf = document.getElementById('file-input-pdf');
+
+  const triggerFilePicker = () => {
+    if (fileInputPdf) fileInputPdf.click();
+  };
+
+  if (btnOpenFile) btnOpenFile.addEventListener('click', triggerFilePicker);
+  if (btnDropzoneOpen) btnDropzoneOpen.addEventListener('click', triggerFilePicker);
+
+  if (fileInputPdf) {
+    fileInputPdf.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        loadPdfFileFromDisk(e.target.files[0]);
+      }
+    });
+  }
+
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        loadPdfFileFromDisk(file);
+      }
+    }
+  });
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     clampNumber,
@@ -2273,9 +2333,12 @@ if (typeof module !== 'undefined' && module.exports) {
     performSearch,
     setupKeyboardShortcuts,
     openSettingsModal,
-    closeSettingsModal
+    closeSettingsModal,
+    loadPdfFileFromDisk,
+    setupFileOpenAndDragDropListeners
   };
 }
+
 
 
 
