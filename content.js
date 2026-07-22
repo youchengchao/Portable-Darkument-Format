@@ -183,14 +183,12 @@ function applyClassicTheme(rawSettings) {
 
   if (styleEl) {
     styleEl.textContent = `
-      html {
+      html, body {
         filter: ${filterString} !important;
         background-color: #121212 !important;
       }
-      body {
-        background-color: #121212 !important;
-      }
-      embed[type="application/pdf"], iframe[type="application/pdf"], object[type="application/pdf"] {
+      embed, object, iframe, pdf-viewer, #viewer, .pdf-viewer {
+        filter: ${filterString} !important;
         background-color: #121212 !important;
       }
       img, svg, canvas:not(#pdf-view-area canvas), .protected-diagram {
@@ -198,6 +196,7 @@ function applyClassicTheme(rawSettings) {
       }
     `;
   }
+
 
   if (typeof document !== 'undefined') {
     tagProtectedElements(document);

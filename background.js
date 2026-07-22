@@ -80,6 +80,11 @@ function isPdfUrl(url) {
     if (url.includes('viewer.html') || url.includes('native=true')) {
       return false;
     }
+    // Local file:/// PDFs are rendered natively in Dark Mode by content.js
+    // This avoids Chromium extension tab CORS errors and prevents dropzone screens.
+    if (url.startsWith('file:///')) {
+      return false;
+    }
     const cleanUrl = url.split('?')[0].split('#')[0].toLowerCase();
     if (cleanUrl.endsWith('.pdf')) {
       return true;
@@ -90,6 +95,7 @@ function isPdfUrl(url) {
     return false;
   }
 }
+
 
 
 
