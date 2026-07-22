@@ -19,6 +19,13 @@
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
         </button>
+        <button id="btn-toggle-toc" class="btn" title="Toggle Document Outline / Bookmarks">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
         <span id="doc-title" class="doc-title">Loading PDF...</span>
       </div>
       
@@ -54,6 +61,22 @@
       </div>
 
       <div class="toolbar-section right">
+        <!-- Bionic Reading Toggle Button -->
+        <button id="btn-toggle-bionic" class="btn" title="Toggle Bionic Reading Mode (Speed Reading Focus)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 8v8"></path>
+            <path d="M8 12h8"></path>
+          </svg>
+        </button>
+        <!-- Reading Ruler Guide Toggle Button -->
+        <button id="btn-toggle-ruler" class="btn" title="Toggle Reading Ruler (Line Focus Guide)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="6" x2="20" y2="6"></line>
+            <line x1="4" y1="12" x2="20" y2="12"></line>
+            <line x1="4" y1="18" x2="20" y2="18"></line>
+          </svg>
+        </button>
         <!-- Annotation toggle button -->
         <button id="btn-toggle-annotate" class="btn" title="Annotate / Drawing Tools">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -61,8 +84,20 @@
             <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
           </svg>
         </button>
+        <!-- Notes / Highlights Side Drawer Toggle -->
+        <button id="btn-toggle-notes" class="btn" title="Highlights & Notes Side Drawer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </button>
         <!-- Theme indicator -->
         <span id="theme-badge" class="theme-badge">Dark</span>
+        <!-- Supporter indicator -->
+        <span id="viewer-supporter-badge" class="supporter-badge hidden">Supporter ❤️</span>
         <!-- Settings button -->
         <button id="btn-settings" class="btn" title="Open Settings Extension Popup">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -127,17 +162,96 @@
       </button>
     </div>
 
-    <!-- PDF Pages Display Area -->
-    <main id="pdf-view-area">
-      <!-- Loading indicator -->
-      <div id="loading-spinner" class="spinner-container">
-        <div class="spinner"></div>
-        <p>Rendering document...</p>
+    <div class="viewer-body">
+      <!-- TOC Sidebar Drawer -->
+      <aside id="toc-drawer" class="toc-drawer hidden">
+        <div class="toc-header">
+          <div class="toc-title-area">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; margin-right: 6px; color: #8b5cf6;">
+              <line x1="8" y1="6" x2="21" y2="6"></line>
+              <line x1="8" y1="12" x2="21" y2="12"></line>
+              <line x1="8" y1="18" x2="21" y2="18"></line>
+              <line x1="3" y1="6" x2="3.01" y2="6"></line>
+              <line x1="3" y1="12" x2="3.01" y2="12"></line>
+              <line x1="3" y1="18" x2="3.01" y2="18"></line>
+            </svg>
+            <span>Document Outline</span>
+          </div>
+          <button id="btn-close-toc" class="btn-close" title="Close Outline">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div id="toc-content" class="toc-content">
+          <div class="toc-empty">No table of contents available</div>
+        </div>
+      </aside>
+
+      <!-- PDF Pages Display Area -->
+      <main id="pdf-view-area">
+        <!-- Loading indicator -->
+        <div id="loading-spinner" class="spinner-container">
+          <div class="spinner"></div>
+          <p>Rendering document...</p>
+        </div>
+        <!-- Pages will be dynamically appended here -->
+        <div id="pages-container"></div>
+      </main>
+    </div>
+
+    <!-- Side Drawer Note Management -->
+    <aside id="notes-drawer" class="notes-drawer">
+      <div class="drawer-header">
+        <h3>Highlights & Notes</h3>
+        <button id="btn-close-notes-drawer" class="btn-icon-sm" title="Close Drawer">✕</button>
       </div>
-      <!-- Pages will be dynamically appended here -->
-      <div id="pages-container"></div>
-    </main>
+      <div class="drawer-actions">
+        <button id="btn-export-md" class="drawer-btn drawer-btn-primary">
+          <span>📄 Export Markdown (.md)</span>
+        </button>
+        <button id="btn-export-txt" class="drawer-btn drawer-btn-secondary">
+          <span>📝 Export Text (.txt)</span>
+        </button>
+      </div>
+      <div id="notes-list" class="notes-list">
+        <div class="notes-empty-state">No highlights or notes saved yet. Select text in the document to add a neon highlight.</div>
+      </div>
+    </aside>
+
+    <!-- Floating Text Selection Popover for Neon Highlighting -->
+    <div id="highlight-popover" class="highlight-popover hidden">
+      <div class="popover-colors">
+        <button class="neon-dot amber" data-color="amber" style="background-color: #fbbf24;" title="Amber Highlight"></button>
+        <button class="neon-dot cyan" data-color="cyan" style="background-color: #22d3ee;" title="Cyan Highlight"></button>
+        <button class="neon-dot mint" data-color="mint" style="background-color: #34d399;" title="Mint Highlight"></button>
+        <button class="neon-dot rose" data-color="rose" style="background-color: #fb7185;" title="Rose Highlight"></button>
+      </div>
+      <div class="popover-note-row">
+        <input type="text" id="popover-note-input" placeholder="Add optional note..." />
+        <button id="popover-btn-add" class="popover-save-btn">Save</button>
+      </div>
+    <!-- Floating Reading Ruler Guide Line -->
+    <div id="reading-ruler" class="reading-ruler hidden"></div>
+
+    <!-- Milestone Voluntary Donation Toast -->
+    <div id="milestone-toast" class="milestone-toast hidden">
+      <button class="toast-close" id="btn-close-toast" title="Dismiss">✕</button>
+      <div class="toast-content">
+        <span class="toast-icon">☕</span>
+        <div class="toast-text">
+          <strong>Enjoying PDF Dark Mode?</strong>
+          <p id="milestone-desc">You've reached a reading milestone! If this tool helps your daily study or research, consider supporting development.</p>
+        </div>
+      </div>
+      <div class="toast-actions">
+        <a href="https://buymeacoffee.com" target="_blank" class="toast-btn toast-btn-primary">Buy Me a Coffee ☕</a>
+        <a href="https://github.com/sponsors" target="_blank" class="toast-btn toast-btn-secondary">GitHub Sponsors 💖</a>
+      </div>
+    </div>
   </div>
   <script src="viewer.js"></script>
 </body>
 </html>
+

@@ -16,7 +16,22 @@ chrome.runtime.onInstalled.addListener(() => {
       brightness: 90,    // percentage
       contrast: 100,     // percentage
       grayscale: 0,      // percentage
-      invertImages: false
+      invertImages: false,
+      bionicReading: false,
+      readingRuler: false,
+      rulerHeight: 40,
+      autoNightSchedule: {
+        enabled: false,
+        mode: 'system',
+        startTime: '20:00',
+        endTime: '07:00'
+      },
+      supporter: {
+        isSupporter: false,
+        goldAccent: false,
+        promptDismissedCount: 0,
+        lastPromptDate: ''
+      }
     };
 
     const updates = {};
@@ -102,5 +117,216 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       });
     }
+  } else if (message.action === 'get_settings') {
+    chrome.storage.local.get(null, (settings) => {
+      sendResponse(settings);
+    });
+    return true;
+  } else if (message.action === 'update_settings') {
+    if (message.settings) {
+      chrome.storage.local.set(message.settings, () => {
+        sendResponse({ success: true });
+      });
+      return true;
+    }
+  } else if (message.action === 'save_position') {
+    if (message.url) {
+      chrome.storage.local.get('readingPositions', (result) => {
+        const positions = (typeof result.readingPositions === 'object' && result.readingPositions !== null)
+          ? result.readingPositions
+          : {};
+        positions[message.url] = {
+          page: message.page || 1,
+          scrollTop: Math.max(0, message.scrollTop || 0),
+          scrollLeft: Math.max(0, message.scrollLeft || 0),
+          zoom: message.zoom || 1.0,
+          updatedAt: Date.now()
+        };
+        chrome.storage.local.set({ readingPositions: positions }, () => {
+          sendResponse({ success: true });
+        });
+      });
+      return true;
+    }
+  } else if (message.action === 'track_reading') {
+    handleTrackReading(message, sendResponse);
+    return true;
+  } else if (message.action === 'record_page_view') {
+    handleTrackReading({ action: 'track_reading', seconds: 0, pages: 1 }, sendResponse);
+    return true;
+  } else if (message.action === 'record_reading_time') {
+    const secs = typeof message.seconds === 'number' ? message.seconds : ((message.minutes || 1) * 60);
+    handleTrackReading({ action: 'track_reading', seconds: secs, pages: 0 }, sendResponse);
+    return true;
   }
 });
+
+// Update reading analytics & daily streak counter
+function handleTrackReading(message, callback) {
+  const todayISO = message.dateISO || new Date().toISOString().split('T')[0];
+
+  chrome.storage.local.get(['analytics', 'supporter'], (result) => {
+    let analytics = result.analytics;
+    if (!analytics || typeof analytics !== 'object') {
+      analytics = {
+        totalReadingTimeSeconds: 0,
+        totalPagesRead: 0,
+        dailyStats: {},
+        currentStreak: 0,
+        lastReadDate: ''
+      };
+    }
+
+    const rawSeconds = message.seconds;
+    const secondsToAdd = (typeof rawSeconds === 'number' && !isNaN(rawSeconds) && rawSeconds > 0) ? rawSeconds : 0;
+
+    let pagesToAdd = 0;
+    if (typeof message.pages === 'number' && !isNaN(message.pages) && message.pages >= 0) {
+      pagesToAdd = message.pages;
+    } else if (typeof message.pageCount === 'number' && !isNaN(message.pageCount) && message.pageCount >= 0) {
+      pagesToAdd = message.pageCount;
+    } else if (typeof message.page === 'number' && !isNaN(message.page)) {
+      if (message.page >= 50) {
+        pagesToAdd = message.page;
+      } else if (message.page > 0) {
+        pagesToAdd = 1;
+      }
+    } else if (message.page) {
+      pagesToAdd = 1;
+    }
+
+    analytics.totalReadingTimeSeconds = (analytics.totalReadingTimeSeconds || 0) + secondsToAdd;
+    analytics.totalPagesRead = (analytics.totalPagesRead || 0) + pagesToAdd;
+
+    const dailyStats = analytics.dailyStats || {};
+    const todayStat = dailyStats[todayISO] || { seconds: 0, pages: 0 };
+    todayStat.seconds = (todayStat.seconds || 0) + secondsToAdd;
+    todayStat.pages = (todayStat.pages || 0) + pagesToAdd;
+    dailyStats[todayISO] = todayStat;
+    analytics.dailyStats = dailyStats;
+
+    // Prune stats older than 365 days if too large
+    const dates = Object.keys(analytics.dailyStats);
+    if (dates.length > 365) {
+      dates.sort();
+      const toRemove = dates.slice(0, dates.length - 365);
+      toRemove.forEach(d => delete analytics.dailyStats[d]);
+    }
+
+    // Streak logic
+    if (analytics.lastReadDate !== todayISO) {
+      if (!analytics.lastReadDate) {
+        analytics.currentStreak = 1;
+      } else {
+        const lastDate = new Date(analytics.lastReadDate);
+        const currentDate = new Date(todayISO);
+        const diffDays = Math.floor((currentDate - lastDate) / (86400 * 1000));
+        if (diffDays === 1) {
+          analytics.currentStreak = (analytics.currentStreak || 0) + 1;
+        } else if (diffDays > 1) {
+          analytics.currentStreak = 1;
+        }
+      }
+      analytics.lastReadDate = todayISO;
+    }
+
+    chrome.storage.local.set({ analytics }, () => {
+      let response = { success: true, analytics };
+      if (analytics.currentStreak >= 7 || analytics.totalPagesRead >= 50) {
+        const supporter = result.supporter || {};
+        if (!supporter.isSupporter && (supporter.promptDismissedCount || 0) < 3) {
+          response.triggerDonationPrompt = true;
+          response.reason = analytics.currentStreak >= 7 ? '7-day streak milestone' : '50 pages read milestone';
+        }
+      }
+      if (callback) callback(response);
+    });
+  });
+}
+
+// Auto-Night Schedule Helpers and Alarm Manager
+function isNightTime(schedule, nowTimeStr) {
+  if (!schedule || !schedule.enabled) return false;
+  if (schedule.mode === 'system') return true;
+
+  const [startH, startM] = (schedule.startTime || '20:00').split(':').map(Number);
+  const [endH, endM] = (schedule.endTime || '07:00').split(':').map(Number);
+  let nowH, nowM;
+  if (nowTimeStr) {
+    [nowH, nowM] = nowTimeStr.split(':').map(Number);
+  } else {
+    const d = new Date();
+    nowH = d.getHours();
+    nowM = d.getMinutes();
+  }
+
+  const startMins = startH * 60 + startM;
+  const endMins = endH * 60 + endM;
+  const nowMins = nowH * 60 + nowM;
+
+  if (startMins > endMins) {
+    return nowMins >= startMins || nowMins < endMins;
+  } else {
+    return nowMins >= startMins && nowMins < endMins;
+  }
+}
+
+function setupAutoNightAlarm(schedule) {
+  if (typeof chrome !== 'undefined' && chrome.alarms) {
+    if (schedule && schedule.enabled) {
+      chrome.alarms.create('autoNightCheck', { periodInMinutes: 1 });
+    } else {
+      chrome.alarms.clear('autoNightCheck');
+    }
+  }
+}
+
+function checkAutoNightSchedule() {
+  if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+  chrome.storage.local.get(['autoNightSchedule', 'active'], (result) => {
+    const schedule = result.autoNightSchedule;
+    if (schedule && schedule.enabled) {
+      const shouldBeActive = isNightTime(schedule);
+      if (result.active !== shouldBeActive) {
+        chrome.storage.local.set({ active: shouldBeActive });
+      }
+    }
+  });
+}
+
+if (typeof chrome !== 'undefined' && chrome.alarms) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm && alarm.name === 'autoNightCheck') {
+      checkAutoNightSchedule();
+    }
+  });
+}
+
+if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.autoNightSchedule) {
+      setupAutoNightAlarm(changes.autoNightSchedule.newValue);
+      checkAutoNightSchedule();
+    }
+  });
+}
+
+function updateReadingStats(pagesToAdd = 0, minutesToAdd = 0, callback) {
+  return handleTrackReading({ action: 'track_reading', seconds: minutesToAdd * 60, pages: pagesToAdd }, callback);
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    isPdfUrl,
+    redirectToViewer,
+    handleTrackReading,
+    updateReadingStats,
+    isNightTime,
+    setupAutoNightAlarm,
+    checkAutoNightSchedule
+  };
+}
+
+
+
+

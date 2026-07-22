@@ -19,6 +19,8 @@
           <polyline points="10 9 9 9 8 9"></polyline>
         </svg>
         <h1>PDF Dark</h1>
+        <span id="top-streak-badge" class="top-streak-badge">🔥 0 Day Streak</span>
+        <span id="popup-supporter-badge" class="supporter-badge hidden">Supporter ❤️</span>
       </div>
       <label class="switch">
         <input type="checkbox" id="master-toggle" checked>
@@ -26,104 +28,294 @@
       </label>
     </header>
 
+    <!-- Tabbed Navigation Bar -->
+    <nav class="popup-tabs">
+      <button class="popup-tab-btn active" data-tab="tab-controls">Controls</button>
+      <button class="popup-tab-btn" data-tab="tab-bookmarks">Bookmarks & Notes</button>
+      <button class="popup-tab-btn" data-tab="tab-stats">Stats</button>
+      <button class="popup-tab-btn" data-tab="tab-support">Support ☕</button>
+    </nav>
+
     <!-- Main Content -->
     <main id="main-content">
-      <!-- Mode Selection -->
-      <section class="section">
-        <h2 class="section-title">Rendering Mode</h2>
-        <div class="mode-selector">
-          <label class="mode-card">
-            <input type="radio" name="rendering-mode" value="classic" checked>
-            <div class="mode-card-content">
-              <span class="mode-title">Classic Mode</span>
-              <span class="mode-desc">Fast, standard CSS inversion. Works on native viewer.</span>
-            </div>
-          </label>
-          <label class="mode-card">
-            <input type="radio" name="rendering-mode" value="enhanced">
-            <div class="mode-card-content">
-              <span class="mode-title">Enhanced Mode</span>
-              <span class="mode-desc">Uses PDF.js. Beautiful render, keeps image colors original.</span>
-            </div>
-          </label>
-        </div>
-      </section>
-
-      <!-- Theme Selection -->
-      <section class="section" id="theme-section">
-        <h2 class="section-title">Color Theme</h2>
-        <div class="theme-grid">
-          <label class="theme-option" data-theme="dark">
-            <input type="radio" name="color-theme" value="dark" checked>
-            <div class="theme-box theme-dark"></div>
-            <span>Dark</span>
-          </label>
-          <label class="theme-option" data-theme="warm">
-            <input type="radio" name="color-theme" value="warm">
-            <div class="theme-box theme-warm"></div>
-            <span>Warm</span>
-          </label>
-          <label class="theme-option" data-theme="cool">
-            <input type="radio" name="color-theme" value="cool">
-            <div class="theme-box theme-cool"></div>
-            <span>Cool</span>
-          </label>
-          <label class="theme-option" data-theme="sepia">
-            <input type="radio" name="color-theme" value="sepia">
-            <div class="theme-box theme-sepia"></div>
-            <span>Sepia</span>
-          </label>
-          <label class="theme-option" data-theme="mono">
-            <input type="radio" name="color-theme" value="mono">
-            <div class="theme-box theme-mono"></div>
-            <span>Mono</span>
-          </label>
-        </div>
-      </section>
-
-      <!-- Sliders / Fine Adjustments -->
-      <section class="section">
-        <h2 class="section-title">Adjustments</h2>
-        <div class="adjustments-panel">
-          <!-- Brightness -->
-          <div class="slider-group">
-            <div class="slider-label-row">
-              <span>Brightness</span>
-              <span class="slider-value" id="brightness-val">90%</span>
-            </div>
-            <input type="range" id="slider-brightness" min="50" max="150" value="90">
+      <!-- TAB 1: Controls -->
+      <div id="tab-controls" class="tab-pane active">
+        <!-- Mode Selection -->
+        <section class="section">
+          <h2 class="section-title">Rendering Mode</h2>
+          <div class="mode-selector">
+            <label class="mode-card">
+              <input type="radio" name="rendering-mode" value="classic" checked>
+              <div class="mode-card-content">
+                <span class="mode-title">Classic Mode</span>
+                <span class="mode-desc">Fast, standard CSS inversion. Works on native viewer.</span>
+              </div>
+            </label>
+            <label class="mode-card">
+              <input type="radio" name="rendering-mode" value="enhanced">
+              <div class="mode-card-content">
+                <span class="mode-title">Enhanced Mode</span>
+                <span class="mode-desc">Uses PDF.js. Beautiful render, keeps image colors original.</span>
+              </div>
+            </label>
           </div>
+        </section>
 
-          <!-- Contrast -->
-          <div class="slider-group">
-            <div class="slider-label-row">
-              <span>Contrast</span>
-              <span class="slider-value" id="contrast-val">100%</span>
-            </div>
-            <input type="range" id="slider-contrast" min="50" max="150" value="100">
+        <!-- Theme Selection -->
+        <section class="section" id="theme-section">
+          <h2 class="section-title">Color Theme</h2>
+          <div class="theme-grid">
+            <label class="theme-option" data-theme="oled">
+              <input type="radio" name="color-theme" value="oled" checked>
+              <div class="theme-box theme-oled"></div>
+              <span>OLED</span>
+            </label>
+            <label class="theme-option" data-theme="sepia">
+              <input type="radio" name="color-theme" value="sepia">
+              <div class="theme-box theme-sepia"></div>
+              <span>Sepia</span>
+            </label>
+            <label class="theme-option" data-theme="slate">
+              <input type="radio" name="color-theme" value="slate">
+              <div class="theme-box theme-slate"></div>
+              <span>Slate</span>
+            </label>
+            <label class="theme-option" data-theme="mono">
+              <input type="radio" name="color-theme" value="mono">
+              <div class="theme-box theme-mono"></div>
+              <span>Mono</span>
+            </label>
+            <label class="theme-option" data-theme="classic">
+              <input type="radio" name="color-theme" value="classic">
+              <div class="theme-box theme-classic"></div>
+              <span>Classic</span>
+            </label>
           </div>
+        </section>
 
-          <!-- Grayscale -->
-          <div class="slider-group">
-            <div class="slider-label-row">
-              <span>Grayscale</span>
-              <span class="slider-value" id="grayscale-val">0%</span>
+        <!-- Sliders / Fine Adjustments -->
+        <section class="section">
+          <h2 class="section-title">Adjustments</h2>
+          <div class="adjustments-panel">
+            <!-- Brightness -->
+            <div class="slider-group">
+              <div class="slider-label-row">
+                <span>Brightness</span>
+                <span class="slider-value" id="brightness-val">90%</span>
+              </div>
+              <input type="range" id="slider-brightness" min="50" max="150" value="90">
             </div>
-            <input type="range" id="slider-grayscale" min="0" max="100" value="0">
+
+            <!-- Contrast -->
+            <div class="slider-group">
+              <div class="slider-label-row">
+                <span>Contrast</span>
+                <span class="slider-value" id="contrast-val">100%</span>
+              </div>
+              <input type="range" id="slider-contrast" min="50" max="150" value="100">
+            </div>
+
+            <!-- Grayscale -->
+            <div class="slider-group">
+              <div class="slider-label-row">
+                <span>Grayscale</span>
+                <span class="slider-value" id="grayscale-val">0%</span>
+              </div>
+              <input type="range" id="slider-grayscale" min="0" max="100" value="0">
+            </div>
+          </div>
+        </section>
+        
+        <!-- Controls & Protection -->
+        <section class="section">
+          <h2 class="section-title">Controls & Eye Care</h2>
+          <div class="toggle-panel">
+            <div class="toggle-item">
+              <div class="toggle-info">
+                <span class="toggle-title">Diagram & Image Protection</span>
+                <span class="toggle-desc">Preserves original colors for photos, charts & SVG diagrams</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="protect-diagrams-toggle" checked>
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div class="toggle-item">
+              <div class="toggle-info">
+                <span class="toggle-title">Bionic Reading Guide</span>
+                <span class="toggle-desc">Highlights initial 40-50% characters of words for speed reading focus</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="bionic-reading-toggle">
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div class="toggle-item">
+              <div class="toggle-info">
+                <span class="toggle-title">Reading Ruler / Line Focus</span>
+                <span class="toggle-desc">Semi-transparent line focus bar following mouse Y cursor</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="reading-ruler-toggle">
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div class="slider-group" id="ruler-height-group" style="padding-top: 8px;">
+              <div class="slider-label-row">
+                <span>Ruler Height</span>
+                <span class="slider-value" id="ruler-height-val">40px</span>
+              </div>
+              <input type="range" id="slider-ruler-height" min="10" max="100" value="40">
+            </div>
+          </div>
+        </section>
+
+        <!-- Auto-Night Schedule Section -->
+        <section class="section">
+          <h2 class="section-title">Auto-Night Schedule</h2>
+          <div class="toggle-panel">
+            <div class="toggle-item">
+              <div class="toggle-info">
+                <span class="toggle-title">Enable Auto-Night Schedule</span>
+                <span class="toggle-desc">Automatically toggles dark mode based on system theme or sunset time</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="auto-night-toggle">
+                <span class="slider round"></span>
+              </label>
+            </div>
+
+            <div class="schedule-options" id="schedule-options-panel" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+              <div class="schedule-mode-row" style="display: flex; gap: 12px; align-items: center;">
+                <label class="schedule-mode-label" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px; color: var(--text-primary);">
+                  <input type="radio" name="schedule-mode" value="system" id="schedule-mode-system" checked> System Preference
+                </label>
+                <label class="schedule-mode-label" style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px; color: var(--text-primary);">
+                  <input type="radio" name="schedule-mode" value="sunset" id="schedule-mode-sunset"> Sunset Schedule
+                </label>
+              </div>
+
+              <div class="schedule-time-row" id="schedule-time-row" style="display: flex; gap: 12px; align-items: center; margin-top: 4px;">
+                <label style="font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+                  Start:
+                  <input type="time" id="schedule-start-time" value="20:00" style="background: #181825; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; padding: 2px 6px; font-size: 12px;">
+                </label>
+                <label style="font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+                  End:
+                  <input type="time" id="schedule-end-time" value="07:00" style="background: #181825; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; padding: 2px 6px; font-size: 12px;">
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Support / Note info for File URLs -->
+        <div class="info-box" id="file-url-warning">
+          <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <div class="info-text">
+            <strong>Local Files:</strong> To use this on local PDFs, open <em>chrome://extensions</em>, click <strong>Details</strong> on this extension, and enable <strong>"Allow access to file URLs"</strong>.
           </div>
         </div>
-      </section>
-      
-      <!-- Support / Note info for File URLs -->
-      <div class="info-box" id="file-url-warning">
-        <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
-        <div class="info-text">
-          <strong>Local Files:</strong> To use this on local PDFs, open <em>chrome://extensions</em>, click <strong>Details</strong> on this extension, and enable <strong>"Allow access to file URLs"</strong>.
-        </div>
+      </div>
+
+      <!-- TAB 2: Bookmarks & Notes -->
+      <div id="tab-bookmarks" class="tab-pane hidden">
+        <section class="section">
+          <h2 class="section-title">Reading Memory & Bookmarks</h2>
+          <div id="popup-bookmarks-list" class="popup-bookmarks-list">
+            <div class="bookmarks-empty-state">No saved reading positions found.</div>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">Notes & Highlights Management</h2>
+          <div class="popup-notes-actions">
+            <button id="popup-export-md" class="export-btn export-btn-primary">📄 Export Markdown (.md)</button>
+            <button id="popup-export-txt" class="export-btn export-btn-secondary">📝 Export Text (.txt)</button>
+          </div>
+          <div id="popup-notes-list" class="popup-notes-list">
+            <div class="notes-empty-state">No highlights or notes recorded. Highlight text in any PDF document to manage them here.</div>
+          </div>
+        </section>
+      </div>
+
+      <!-- TAB 3: Stats -->
+      <div id="tab-stats" class="tab-pane hidden">
+        <section class="section">
+          <h2 class="section-title">Reading Analytics</h2>
+          <div class="stats-overview-grid">
+            <div class="stat-card">
+              <span class="stat-icon">🔥</span>
+              <span class="stat-val" id="popup-streak-val">1 Day</span>
+              <span class="stat-lbl">Active Streak</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon">⏱️</span>
+              <span class="stat-val" id="popup-time-val">0 min</span>
+              <span class="stat-lbl">Reading Time</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-icon">📖</span>
+              <span class="stat-val" id="popup-pages-val">0 Pages</span>
+              <span class="stat-lbl">Total Read</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Daily Reading Chart / Summary Breakdown -->
+        <section class="section">
+          <h2 class="section-title">7-Day Reading Breakdown</h2>
+          <div id="daily-chart-container" class="daily-chart-container">
+            <!-- Render 7-day bar chart dynamically -->
+          </div>
+        </section>
+      </div>
+
+      <!-- TAB 4: Support ☕ -->
+      <div id="tab-support" class="tab-pane hidden">
+        <section class="section">
+          <h2 class="section-title">Voluntary Support Hub</h2>
+          <p class="support-intro-text">PDF Dark Mode is 100% free and open-source. If you enjoy reading PDFs with zero eye strain every day, consider supporting development!</p>
+          <div class="support-btn-grid">
+            <a href="https://buymeacoffee.com" target="_blank" class="support-link-btn" id="btn-support-bmc">☕ Buy Me a Coffee</a>
+            <a href="https://ko-fi.com" target="_blank" class="support-link-btn" id="btn-support-kofi">❤️ Ko-fi</a>
+            <a href="https://github.com/sponsors" target="_blank" class="support-link-btn" id="btn-support-github">💖 GitHub Sponsors</a>
+            <a href="https://paypal.me" target="_blank" class="support-link-btn" id="btn-support-paypal">💳 PayPal</a>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 class="section-title">Supporter Customization</h2>
+          <div class="toggle-panel">
+            <div class="toggle-item">
+              <div class="toggle-info">
+                <span class="toggle-title">Supporter Badge ❤️</span>
+                <span class="toggle-desc">Display supporter status in popup and viewer</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="is-supporter-toggle">
+                <span class="slider round"></span>
+              </label>
+            </div>
+            <div class="toggle-item" style="margin-top: 8px;">
+              <div class="toggle-info">
+                <span class="toggle-title">Gold Accent Theme</span>
+                <span class="toggle-desc">Enable premium golden theme styling</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="gold-accent-toggle">
+                <span class="slider round"></span>
+              </label>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
 

@@ -254,20 +254,20 @@ input:checked + .slider:before {
 }
 
 /* Theme Previews */
-.theme-dark {
-  background: linear-gradient(135deg, var(--theme-dark-bg) 50%, var(--theme-dark-fg) 50%);
+.theme-oled, .theme-dark {
+  background: linear-gradient(135deg, #000000 50%, #f4f4f5 50%);
 }
-.theme-warm {
-  background: linear-gradient(135deg, var(--theme-warm-bg) 50%, var(--theme-warm-fg) 50%);
+.theme-sepia, .theme-warm {
+  background: linear-gradient(135deg, #1e1b18 50%, #f2e5d9 50%);
 }
-.theme-cool {
-  background: linear-gradient(135deg, var(--theme-cool-bg) 50%, var(--theme-cool-fg) 50%);
-}
-.theme-sepia {
-  background: linear-gradient(135deg, var(--theme-sepia-bg) 50%, var(--theme-sepia-fg) 50%);
+.theme-slate, .theme-cool {
+  background: linear-gradient(135deg, #0f172a 50%, #e2e8f0 50%);
 }
 .theme-mono {
-  background: linear-gradient(135deg, var(--theme-mono-bg) 50%, var(--theme-mono-fg) 50%);
+  background: linear-gradient(135deg, #121212 50%, #a1a1aa 50%);
+}
+.theme-classic {
+  background: linear-gradient(135deg, #000000 50%, #8b5cf6 50%);
 }
 
 .theme-option:hover .theme-box {
@@ -408,3 +408,376 @@ footer {
 .reset-link:hover {
   color: var(--danger-color);
 }
+
+/* Toggle Panel for Diagram Protection */
+.toggle-panel {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.toggle-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toggle-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.toggle-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+/* 4-Tab Control Panel Styles */
+.popup-tabs {
+  display: flex;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--border-color);
+  margin-bottom: 12px;
+}
+
+.popup-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.popup-tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.popup-tab-btn.active {
+  background-color: var(--accent-color);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
+}
+
+.tab-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tab-pane.hidden {
+  display: none !important;
+}
+
+/* Bookmarks & Notes Tab Styles */
+.popup-notes-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.export-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.export-btn-primary {
+  background: var(--accent-color);
+  color: #ffffff;
+}
+
+.export-btn-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.export-btn:hover {
+  filter: brightness(1.15);
+}
+
+.popup-notes-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Stats Overview */
+.stats-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.stat-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-icon {
+  font-size: 18px;
+}
+
+.stat-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-lbl {
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+/* Top Streak Badge */
+.top-streak-badge {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 12px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* Daily Chart Breakdown */
+.daily-chart-container {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  height: 120px;
+  gap: 4px;
+}
+
+.chart-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.chart-bar-val {
+  font-size: 9px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.chart-bar-wrapper {
+  width: 100%;
+  max-width: 22px;
+  height: 65px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.chart-bar-fill {
+  width: 100%;
+  background: var(--accent-gradient);
+  border-radius: 4px;
+  transition: height 0.3s ease;
+  min-height: 2px;
+}
+
+.chart-bar-label {
+  font-size: 9px;
+  color: var(--text-secondary);
+}
+
+.chart-bar-col.today .chart-bar-label {
+  color: var(--accent-color);
+  font-weight: 700;
+}
+
+/* Support Hub */
+.support-intro-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.support-btn-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.support-link-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.support-link-btn:hover {
+  border-color: var(--accent-color);
+  background: rgba(139, 92, 246, 0.1);
+}
+
+/* Bookmarks & Reading Positions List Styles */
+.popup-bookmarks-list {
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bookmark-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.bookmark-card:hover {
+  border-color: var(--accent-color);
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.bookmark-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bookmark-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.bookmarks-empty-state, .notes-empty-state {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-align: center;
+  padding: 16px 8px;
+  opacity: 0.7;
+}
+
+/* Supporter Badge */
+.supporter-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 12px;
+  letter-spacing: 0.02em;
+}
+
+.supporter-badge.hidden {
+  display: none !important;
+}
+
+/* Gold Accent Theme (.theme-gold-accent) */
+.theme-gold-accent {
+  --accent-color: #f59e0b;
+  --accent-gradient: linear-gradient(135deg, #fbbf24, #d97706);
+}
+
+.theme-gold-accent .popup-tab-btn.active {
+  background-color: #f59e0b;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.4);
+  color: #ffffff;
+}
+
+.theme-gold-accent input:checked + .slider {
+  background-color: #f59e0b;
+  border-color: #f59e0b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+.theme-gold-accent .logo {
+  color: #f59e0b;
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5));
+}
+
+.theme-gold-accent .slider-value {
+  color: #f59e0b;
+}
+
+.theme-gold-accent input[type="range"]::-webkit-slider-thumb {
+  border-color: #f59e0b;
+}
+
+.theme-gold-accent .export-btn-primary {
+  background: linear-gradient(135deg, #fbbf24, #d97706);
+  color: #ffffff;
+}
+
+.theme-gold-accent .support-link-btn:hover {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+
+
+
