@@ -128,41 +128,76 @@ function loadPdf(url) {
   if (url.startsWith('file:///')) {
     logDebug('Local file URL detected. Starting recovery loading pipeline...');
     
-    // Attempt Method 1: XMLHttpRequest
-    logDebug('Attempting Method 1: XMLHttpRequest...');
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', url, true);
-    xhr.responseType = 'arraybuffer';
-    
-    xhr.onload = function() {
-      logDebug(`XMLHttpRequest onload triggered. Status: ${xhr.status}, StatusText: ${xhr.statusText}`);
-      if (xhr.status === 200 || xhr.status === 0) {
-        if (xhr.response && xhr.response.byteLength > 0) {
-          logDebug(`XMLHttpRequest successful! Loaded ${xhr.response.byteLength} bytes.`);
-          loadPdfFromData(xhr.response);
+    // Method 0: Background Service Worker Relay (bypasses Extension sandbox origin blocks)
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      logDebug('Attempting Method 0: Background Service Worker Relay...');
+      try {
+        chrome.runtime.sendMessage({ action: 'read_file_bytes', url: url }, (res) => {
+          if (chrome.runtime.lastError || !res) {
+            logDebug(`Background relay error or empty response. Falling back to XHR.`);
+            tryXhrMethod();
+            return;
+          }
+          if (res.success && res.data) {
+            logDebug('Background Service Worker Relay successful! Converting Base64 bytes...');
+            const binaryString = atob(res.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            loadPdfFromData(bytes.buffer);
+          } else {
+            logDebug(`Background relay failed: ${res.error || 'Unknown error'}. Falling back to XHR.`);
+            tryXhrMethod();
+          }
+        });
+        return;
+      } catch (e) {
+        logDebug(`Background relay exception: ${e.message}. Falling back to XHR.`);
+        tryXhrMethod();
+      }
+    } else {
+      tryXhrMethod();
+    }
+
+    function tryXhrMethod() {
+      // Attempt Method 1: XMLHttpRequest
+      logDebug('Attempting Method 1: XMLHttpRequest...');
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.responseType = 'arraybuffer';
+      
+      xhr.onload = function() {
+        logDebug(`XMLHttpRequest onload triggered. Status: ${xhr.status}, StatusText: ${xhr.statusText}`);
+        if (xhr.status === 200 || xhr.status === 0) {
+          if (xhr.response && xhr.response.byteLength > 0) {
+            logDebug(`XMLHttpRequest successful! Loaded ${xhr.response.byteLength} bytes.`);
+            loadPdfFromData(xhr.response);
+          } else {
+            logDebug('XMLHttpRequest returned an empty array buffer. Falling back to fetch.');
+            tryFetchMethod();
+          }
         } else {
-          logDebug('XMLHttpRequest returned an empty array buffer. Falling back to fetch.');
+          logDebug(`XMLHttpRequest failed with non-success status code.`);
           tryFetchMethod();
         }
-      } else {
-        logDebug(`XMLHttpRequest failed with non-success status code.`);
+      };
+      
+      xhr.onerror = function(err) {
+        logDebug('XMLHttpRequest onerror triggered. This usually indicates a CORS/origin block.');
+        tryFetchMethod();
+      };
+      
+      try {
+        xhr.send();
+      } catch (e) {
+        logDebug(`XMLHttpRequest send threw immediate error: ${e.message}`);
         tryFetchMethod();
       }
-    };
-    
-    xhr.onerror = function(err) {
-      logDebug('XMLHttpRequest onerror triggered. This usually indicates a CORS/origin block.');
-      tryFetchMethod();
-    };
-    
-    try {
-      xhr.send();
-    } catch (e) {
-      logDebug(`XMLHttpRequest send threw immediate error: ${e.message}`);
-      tryFetchMethod();
     }
     
     // Attempt Method 2: Fetch
+
     function tryFetchMethod() {
       logDebug('Attempting Method 2: fetch()...');
       fetch(url)
