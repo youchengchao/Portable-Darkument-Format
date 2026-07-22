@@ -293,7 +293,9 @@ function updateContentReadingRuler(enabled, height = 40) {
 // Initial application
 if (typeof chrome !== 'undefined' && chrome.storage && isPdf()) {
   chrome.storage.local.get(null, (settings) => {
-    if (settings.active && settings.mode === 'enhanced') {
+    if (window.location.href.startsWith('file:///')) {
+      applyClassicTheme({ ...settings, mode: 'classic' });
+    } else if (settings.active && settings.mode === 'enhanced') {
       chrome.runtime.sendMessage({ action: 'pdf_detected', url: window.location.href });
     } else {
       applyClassicTheme(settings);
@@ -306,7 +308,9 @@ if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged)
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && isPdf()) {
       chrome.storage.local.get(null, (settings) => {
-        if (settings.active && settings.mode === 'enhanced') {
+        if (window.location.href.startsWith('file:///')) {
+          applyClassicTheme({ ...settings, mode: 'classic' });
+        } else if (settings.active && settings.mode === 'enhanced') {
           chrome.runtime.sendMessage({ action: 'pdf_detected', url: window.location.href });
         } else {
           applyClassicTheme(settings);
@@ -315,6 +319,7 @@ if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged)
     }
   });
 }
+
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {

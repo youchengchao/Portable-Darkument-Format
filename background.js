@@ -82,11 +82,16 @@ function isPdfUrl(url) {
     if (url.includes('viewer.html')) {
       return false;
     }
+    // file:/// local files open with native speed and dark filters via content.js to bypass browser sandbox origin blocks
+    if (url.startsWith('file:///')) {
+      return false;
+    }
     return pathname.endsWith('.pdf') || parsed.search.includes('pdf=true');
   } catch (e) {
     return false;
   }
 }
+
 
 // Redirect tab to custom viewer
 function redirectToViewer(tabId, url) {
