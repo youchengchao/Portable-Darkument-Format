@@ -61,6 +61,12 @@ function handleBackgroundMessage(message, sender = { tab: { id: 1, url: 'https:/
       chrome.storage.local.set(message.settings);
       return { success: true };
 
+    case 'read_file_bytes':
+      if (store.pendingLocalPdf && store.pendingLocalPdf.data && (!message.url || store.pendingLocalPdf.url === message.url)) {
+        return { success: true, data: store.pendingLocalPdf.data };
+      }
+      return { success: false, error: 'File data unavailable' };
+
     case 'save_position':
       if (message.url) {
         const positions = store.readingPositions || {};
@@ -281,5 +287,13 @@ module.exports = {
   transformWordToBionic: viewer.transformWordToBionic,
   transformTextToBionic: viewer.transformTextToBionic,
   setupAutoNightAlarm: background.setupAutoNightAlarm,
-  checkAutoNightSchedule: background.checkAutoNightSchedule
+  checkAutoNightSchedule: background.checkAutoNightSchedule,
+  sanitizeFileUrl: viewer.sanitizeFileUrl,
+  loadPdf: viewer.loadPdf,
+  setupEventListeners: viewer.setupEventListeners,
+  handleParameterlessStartup: viewer.handleParameterlessStartup,
+  isPdfUrl: background.isPdfUrl,
+  handleReadFileBytes: background.handleReadFileBytes,
+  arrayBufferToBase64: contentScript.arrayBufferToBase64,
+  handleLocalPdf: contentScript.handleLocalPdf
 };

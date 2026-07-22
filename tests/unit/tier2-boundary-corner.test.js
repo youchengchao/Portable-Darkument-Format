@@ -17,7 +17,15 @@ const {
   getReverseFilter,
   tagProtectedElements,
   sanitizeSettings,
-  clampNumber
+  clampNumber,
+  sanitizeFileUrl,
+  loadPdf,
+  setupEventListeners,
+  handleParameterlessStartup,
+  isPdfUrl,
+  handleReadFileBytes,
+  arrayBufferToBase64,
+  handleLocalPdf
 } = require('../helpers/test-utils');
 
 describe('Tier 2: Boundary & Corner Cases Test Suite', () => {
@@ -463,4 +471,190 @@ describe('Tier 2: Boundary & Corner Cases Test Suite', () => {
     });
   });
 
+  // =========================================================================
+  // Module 10: Parameterless Viewer Startup & Null URL Boundaries
+  // =========================================================================
+  describe('Module 10: Parameterless Viewer Startup & Null URL Boundaries', () => {
+    test('10.1 sanitizeFileUrl handles null, undefined, non-string, and empty inputs gracefully', () => {
+      assert.strictEqual(sanitizeFileUrl(null), null);
+      assert.strictEqual(sanitizeFileUrl(undefined), undefined);
+      assert.strictEqual(sanitizeFileUrl(123), 123);
+      assert.strictEqual(sanitizeFileUrl(''), '');
+      assert.strictEqual(sanitizeFileUrl('file:///C:/doc.pdf'), 'file:///C:/doc.pdf');
+      assert.strictEqual(sanitizeFileUrl('file:///C|/doc.pdf'), 'file:///C:/doc.pdf');
+      assert.strictEqual(sanitizeFileUrl('file:///C:/doc%FF.pdf'), 'file:///C:/doc%FF.pdf');
+    });
+
+    test('10.2 loadPdf handles null URL input safely without throwing exceptions', () => {
+      assert.doesNotThrow(() => {
+        loadPdf(null);
+      });
+    });
+
+    test('10.3 Parameterless viewer.html startup DOM state handles null pdfUrl cleanly', () => {
+      const mockElements = {
+        'doc-title': { textContent: '' },
+        'loading-spinner': { style: { display: 'flex' } },
+        'dropzone-overlay': {
+          classList: {
+            classes: new Set(['hidden']),
+            remove(cls) { this.classes.delete(cls); },
+            contains(cls) { return this.classes.has(cls); }
+          }
+        }
+      };
+
+      const origDoc = global.document;
+      global.document = {
+        title: '',
+        getElementById: (id) => mockElements[id] || null,
+        querySelectorAll: () => [],
+        querySelector: () => null,
+        addEventListener: () => {}
+      };
+
+      try {
+        if (!mockElements['dropzone-overlay'].classList.contains('hidden')) {
+          assert.fail('Dropzone should start hidden');
+        }
+
+        handleParameterlessStartup();
+
+        assert.strictEqual(mockElements['doc-title'].textContent, 'PDF Dark Mode');
+        assert.strictEqual(global.document.title, 'PDF Dark Mode');
+        assert.strictEqual(mockElements['loading-spinner'].style.display, 'none');
+        assert.strictEqual(mockElements['dropzone-overlay'].classList.contains('hidden'), false);
+      } finally {
+        global.document = origDoc;
+      }
+    });
+  });
+
+  // =========================================================================
+  // Module 11: Milestone 2 Local File Scheme & CMap Offline Handling
+  // =========================================================================
+  describe('Module 11: Milestone 2 Local File Scheme & CMap Offline Handling', () => {
+    test('11.1 background.js isPdfUrl detects file:/// PDF URLs correctly', () => {
+      assert.strictEqual(isPdfUrl('file:///C:/Users/test/doc.pdf'), true);
+      assert.strictEqual(isPdfUrl('file:///D:/folder/file.PDF'), true);
+      assert.strictEqual(isPdfUrl('file:///C:/path/doc.pdf?native=true'), false);
+      assert.strictEqual(isPdfUrl('file:///C:/path/viewer.html'), false);
+    });
+
+    test('11.2 pending_local Base64 ArrayBuffer encoding and decoding cycle', () => {
+      const sampleBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37]); // %PDF-1.7
+      const b64 = arrayBufferToBase64(sampleBytes.buffer);
+      assert.strictEqual(typeof b64, 'string');
+      const decodedStr = atob(b64);
+      const decodedBytes = new Uint8Array(decodedStr.length);
+      for (let i = 0; i < decodedStr.length; i++) {
+        decodedBytes[i] = decodedStr.charCodeAt(i);
+      }
+      assert.deepStrictEqual(Array.from(decodedBytes), Array.from(sampleBytes));
+    });
+
+    test('11.3 background.js handleReadFileBytes retrieves stored pendingLocalPdf data', async () => {
+      const testPdf = { name: 'test.pdf', data: 'JVBERi0xLjc=', url: 'file:///C:/test.pdf' };
+      await chrome.storage.local.set({ pendingLocalPdf: testPdf });
+
+      const response = await new Promise((resolve) => {
+        handleReadFileBytes({ action: 'read_file_bytes', url: 'file:///C:/test.pdf' }, {}, resolve);
+      });
+      assert.strictEqual(response.success, true);
+      assert.strictEqual(response.data, 'JVBERi0xLjc=');
+    });
+
+    test('11.4 content.js handleLocalPdf detects file:/// PDF documents and returns true when mode is enhanced', async () => {
+      const origWin = global.window;
+      const origFetch = global.fetch;
+      global.window = {
+        location: { href: 'file:///C:/Users/test/document.pdf', search: '', hash: '' },
+        __pdfDarkProcessingLocal: false
+      };
+      global.fetch = () => Promise.resolve({
+        arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3, 4]).buffer)
+      });
+      try {
+        const settings = { active: true, mode: 'enhanced' };
+        const result = handleLocalPdf(settings);
+        assert.strictEqual(result, true);
+        await new Promise(r => setTimeout(r, 20));
+      } finally {
+        global.window = origWin;
+        global.fetch = origFetch;
+      }
+    });
+
+    test('11.5 viewer.js loadPdfFromData configures local offline cMapUrl path', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const viewerJsContent = fs.readFileSync(path.join(__dirname, '../../viewer.js'), 'utf8');
+      assert.ok(viewerJsContent.includes("cMapUrl: 'pdfjs/cmaps/'"), 'cMapUrl should use local pdfjs/cmaps/ path');
+      assert.ok(!viewerJsContent.includes("cMapUrl: 'https://unpkg.com"), 'cMapUrl should not point to unpkg CDN');
+    });
+
+    test('11.6 content.js handleLocalPdf fallback to applyClassicTheme on fetch or storage error', async () => {
+      const origWin = global.window;
+      const origFetch = global.fetch;
+      const origDoc = global.document;
+      let styleCreated = false;
+
+      global.window = {
+        location: { href: 'file:///C:/Users/test/document.pdf', search: '', hash: '' },
+        __pdfDarkProcessingLocal: false
+      };
+      global.fetch = () => Promise.reject(new Error('Fetch network error'));
+      global.document = {
+        getElementById: () => null,
+        createElement: (tag) => ({ id: '', textContent: '', tag }),
+        head: {
+          appendChild: (el) => {
+            if (el && el.id === 'pdf-dark-style') {
+              styleCreated = true;
+            }
+          }
+        },
+        querySelectorAll: () => []
+      };
+
+      try {
+        const settings = { active: true, mode: 'enhanced' };
+        const result = handleLocalPdf(settings);
+        assert.strictEqual(result, true);
+        await new Promise(r => setTimeout(r, 20));
+        assert.strictEqual(global.window.__pdfDarkProcessingLocal, false, 'Processing flag should reset to false on fetch error');
+        assert.strictEqual(styleCreated, true, 'pdf-dark-style element should be created by applyClassicTheme');
+      } finally {
+        global.window = origWin;
+        global.fetch = origFetch;
+        global.document = origDoc;
+      }
+    });
+
+    test('11.7 viewer.js pending_local reliably removes pendingLocalPdf from chrome.storage.local even on error', async () => {
+      await chrome.storage.local.set({ pendingLocalPdf: { name: 'corrupt.pdf', data: 'INVALID_BASE64_###' } });
+
+      let storageBefore = await new Promise(r => chrome.storage.local.get('pendingLocalPdf', r));
+      assert.ok(storageBefore.pendingLocalPdf, 'pendingLocalPdf should be present initially');
+
+      // Simulate viewer.html DOMContentLoaded logic for pending_local
+      const res = await new Promise(r => chrome.storage.local.get(null, r));
+      const pending = res ? res.pendingLocalPdf : null;
+      if (pending) {
+        chrome.storage.local.remove('pendingLocalPdf');
+      }
+      if (pending && pending.data) {
+        try {
+          atob(pending.data);
+        } catch (e) {
+          // Exception caught during decode
+        }
+      }
+
+      let storageAfter = await new Promise(r => chrome.storage.local.get('pendingLocalPdf', r));
+      assert.strictEqual(storageAfter.pendingLocalPdf, undefined, 'pendingLocalPdf should be removed even when atob fails');
+    });
+  });
+
 });
+

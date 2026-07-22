@@ -289,10 +289,98 @@ function updateContentReadingRuler(enabled, height = 40) {
   }
 }
 
+// Convert ArrayBuffer to Base64 data string safely in chunks
+function arrayBufferToBase64(buffer) {
+  if (!buffer) return '';
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  const chunkSize = 0x8000;
+  for (let i = 0; i < len; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return typeof btoa === 'function' ? btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
+}
+
+// Handle direct local file:/// PDF opening and storage relay to viewer.html
+function handleLocalPdf(settings) {
+  if (typeof window === 'undefined' || !window.location || !window.location.href) return false;
+  const href = window.location.href;
+  if (!href.startsWith('file:///')) return false;
+  if (!isPdf()) return false;
+
+  const isActive = !settings || settings.active !== false;
+  const isEnhanced = settings && settings.mode !== 'classic';
+
+  if (!isActive || !isEnhanced) return false;
+
+  if (window.__pdfDarkProcessingLocal) return true;
+  window.__pdfDarkProcessingLocal = true;
+
+  if (typeof fetch === 'function') {
+    fetch(href)
+      .then(res => res.arrayBuffer())
+      .then(buffer => {
+        const base64Data = arrayBufferToBase64(buffer);
+        let filename = 'Local PDF Document';
+        try {
+          const urlObj = new URL(href);
+          const segments = urlObj.pathname.split('/');
+          const lastSeg = segments[segments.length - 1];
+          if (lastSeg) {
+            filename = decodeURIComponent(lastSeg);
+          }
+        } catch (e) {}
+
+        const pendingData = {
+          name: filename,
+          data: base64Data,
+          url: href
+        };
+
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({ pendingLocalPdf: pendingData }, () => {
+            if (chrome.runtime && chrome.runtime.lastError) {
+              console.warn('Failed to store pending local PDF data:', chrome.runtime.lastError);
+              if (typeof window !== 'undefined' && window) {
+                window.__pdfDarkProcessingLocal = false;
+              }
+              applyClassicTheme(settings);
+            } else if (chrome.runtime && chrome.runtime.getURL) {
+              window.location.href = chrome.runtime.getURL('viewer.html?file=pending_local');
+            }
+          });
+        } else {
+          if (typeof window !== 'undefined' && window) {
+            window.__pdfDarkProcessingLocal = false;
+          }
+          applyClassicTheme(settings);
+        }
+      })
+      .catch(err => {
+        console.error('Failed to read local PDF file bytes:', err);
+        if (typeof window !== 'undefined' && window) {
+          window.__pdfDarkProcessingLocal = false;
+        }
+        applyClassicTheme(settings);
+      });
+  } else {
+    if (typeof window !== 'undefined' && window) {
+      window.__pdfDarkProcessingLocal = false;
+    }
+    applyClassicTheme(settings);
+  }
+
+  return true;
+}
+
 // Initial application
 if (typeof chrome !== 'undefined' && chrome.storage && isPdf()) {
   chrome.storage.local.get(null, (settings) => {
-    applyClassicTheme(settings);
+    const isLocalHandled = handleLocalPdf(settings);
+    if (!isLocalHandled) {
+      applyClassicTheme(settings);
+    }
   });
 }
 
@@ -301,7 +389,10 @@ if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged)
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && isPdf()) {
       chrome.storage.local.get(null, (settings) => {
-        applyClassicTheme(settings);
+        const isLocalHandled = handleLocalPdf(settings);
+        if (!isLocalHandled) {
+          applyClassicTheme(settings);
+        }
       });
     }
   });
@@ -320,6 +411,9 @@ if (typeof module !== 'undefined' && module.exports) {
     transformWordToBionic,
     transformTextToBionic,
     applyBionicReading,
-    updateContentReadingRuler
+    updateContentReadingRuler,
+    arrayBufferToBase64,
+    handleLocalPdf
   };
 }
+

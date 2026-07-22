@@ -58,18 +58,29 @@ if (typeof document !== 'undefined' && document.addEventListener) {
         chrome.storage.local.get(null, (res) => {
           applyThemeFilters(res);
           applyFocusSettings(res);
-          if (res && res.pendingLocalPdf && res.pendingLocalPdf.data) {
-            const filename = res.pendingLocalPdf.name || 'Local PDF Document';
-            if (docTitle) docTitle.textContent = filename;
-            document.title = filename;
-            
-            const binaryString = atob(res.pendingLocalPdf.data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
+          const pending = res ? res.pendingLocalPdf : null;
+          if (pending) {
+            chrome.storage.local.remove('pendingLocalPdf');
+          }
+          if (pending && pending.data) {
+            try {
+              const filename = pending.name || 'Local PDF Document';
+              if (docTitle) docTitle.textContent = filename;
+              document.title = filename;
+              
+              const binaryString = atob(pending.data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              if (loadingSpinner) loadingSpinner.style.display = 'none';
+              loadPdfFromData(bytes.buffer);
+            } catch (err) {
+              console.error('Failed to decode or process pending local PDF:', err);
+              if (loadingSpinner) loadingSpinner.style.display = 'none';
+              const dropzone = document.getElementById('dropzone-overlay');
+              if (dropzone) dropzone.classList.remove('hidden');
             }
-            if (loadingSpinner) loadingSpinner.style.display = 'none';
-            loadPdfFromData(bytes.buffer);
           } else {
             if (loadingSpinner) loadingSpinner.style.display = 'none';
             const dropzone = document.getElementById('dropzone-overlay');
@@ -78,6 +89,12 @@ if (typeof document !== 'undefined' && document.addEventListener) {
         });
       }
       setupEventListeners();
+      return;
+    }
+
+    // Handle case where viewer.html is opened directly without a PDF URL
+    if (!pdfUrl) {
+      handleParameterlessStartup();
       return;
     }
 
@@ -108,17 +125,44 @@ if (typeof document !== 'undefined' && document.addEventListener) {
   });
 }
 
+// Handle parameterless startup DOM state and settings loading
+function handleParameterlessStartup() {
+  const docTitleEl = docTitle || (typeof document !== 'undefined' ? document.getElementById('doc-title') : null);
+  const spinnerEl = loadingSpinner || (typeof document !== 'undefined' ? document.getElementById('loading-spinner') : null);
+  const dropzone = typeof document !== 'undefined' ? document.getElementById('dropzone-overlay') : null;
+
+  if (docTitleEl) docTitleEl.textContent = 'PDF Dark Mode';
+  if (typeof document !== 'undefined') document.title = 'PDF Dark Mode';
+  if (spinnerEl) spinnerEl.style.display = 'none';
+  if (dropzone) dropzone.classList.remove('hidden');
+
+  // Load stored theme settings even in empty dropzone state
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(null, (settings) => {
+      applyThemeFilters(settings);
+      applyFocusSettings(settings);
+    });
+  }
+
+  // Always setup UI listeners so Drag & Drop and File Picker work
+  setupEventListeners();
+}
+
 // Helper to sanitize local file:// URLs (avoids double encoding and preserves drive letter colons)
 function sanitizeFileUrl(url) {
+  if (!url || typeof url !== 'string') return url;
   if (!url.startsWith('file:///')) return url;
   
   // Extract path part
   let path = url.substring(8);
   
-  // Check if it starts with a drive letter, e.g. "C:" or "C%3A"
+  // Check if it starts with a drive letter, e.g. "C:" or "C%3A" or "C|"
   let drivePrefix = '';
-  if (path.substring(1, 3) === ':/' || path.substring(1, 3) === ':|') {
+  if (path.substring(1, 3) === ':/') {
     drivePrefix = path.substring(0, 2);
+    path = path.substring(2);
+  } else if (path[1] === '|' || path.substring(1, 3) === '|/') {
+    drivePrefix = path.substring(0, 1) + ':';
     path = path.substring(2);
   } else if (path.substring(1, 5).toUpperCase() === '%3A/') {
     drivePrefix = path.substring(0, 1) + ':';
@@ -127,13 +171,20 @@ function sanitizeFileUrl(url) {
   
   // Sanitize the remaining path segments
   const sanitizedSegments = path.split('/')
-    .map(seg => encodeURIComponent(decodeURIComponent(seg)));
+    .map(seg => {
+      try {
+        return encodeURIComponent(decodeURIComponent(seg));
+      } catch (e) {
+        return seg;
+      }
+    });
     
   return 'file:///' + drivePrefix + sanitizedSegments.join('/');
 }
 
 // Load the PDF via PDF.js or local XMLHttp/Fetch diagnostic pipeline
 function loadPdf(url) {
+  if (!url) return;
   if (loadingSpinner) loadingSpinner.style.display = 'flex';
   url = sanitizeFileUrl(url);
 
@@ -195,14 +246,14 @@ function loadPdfFromData(arrayBuffer) {
 
   const loadingTask = pdfjsLib.getDocument({
     data: arrayBuffer,
-    cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
+    cMapUrl: 'pdfjs/cmaps/',
     cMapPacked: true
   });
   
   loadingTask.promise.then(pdf => {
     pdfDoc = pdf;
-    totalPagesEl.textContent = pdf.numPages;
-    loadingSpinner.style.display = 'none';
+    if (totalPagesEl) totalPagesEl.textContent = pdf.numPages;
+    if (loadingSpinner) loadingSpinner.style.display = 'none';
 
     // Get viewport aspect ratio of the first page to create placeholder wrappers
     pdf.getPage(1).then(page => {
@@ -897,7 +948,7 @@ function transformTextToBionic(text) {
 }
 
 function applyBionicReadingToViewer(enabled) {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
   const textLayers = document.querySelectorAll('.textLayer');
   
   textLayers.forEach(layer => {
@@ -1361,37 +1412,46 @@ function updateActiveTocHighlight() {
 // Setup all click event listeners
 function setupEventListeners() {
   // Exit to native viewer
-  btnBack.addEventListener('click', () => {
-    // Append native=true to PDF URL to bypass extension redirection loop
-    const divider = pdfUrl.includes('?') ? '&' : '?';
-    window.location.href = pdfUrl + divider + 'native=true';
-  });
+  if (btnBack) {
+    btnBack.addEventListener('click', () => {
+      if (!pdfUrl) return;
+      // Append native=true to PDF URL to bypass extension redirection loop
+      const divider = pdfUrl.includes('?') ? '&' : '?';
+      window.location.href = pdfUrl + divider + 'native=true';
+    });
+  }
 
   // Zoom In
-  btnZoomIn.addEventListener('click', () => {
-    const currIdx = scaleSteps.indexOf(currentScale);
-    if (currIdx < scaleSteps.length - 1) {
-      adjustZoom(scaleSteps[currIdx + 1]);
-      saveReadingPosition(true);
-    }
-  });
+  if (btnZoomIn) {
+    btnZoomIn.addEventListener('click', () => {
+      const currIdx = scaleSteps.indexOf(currentScale);
+      if (currIdx < scaleSteps.length - 1) {
+        adjustZoom(scaleSteps[currIdx + 1]);
+        saveReadingPosition(true);
+      }
+    });
+  }
 
   // Zoom Out
-  btnZoomOut.addEventListener('click', () => {
-    const currIdx = scaleSteps.indexOf(currentScale);
-    if (currIdx > 0) {
-      adjustZoom(scaleSteps[currIdx - 1]);
-      saveReadingPosition(true);
-    }
-  });
+  if (btnZoomOut) {
+    btnZoomOut.addEventListener('click', () => {
+      const currIdx = scaleSteps.indexOf(currentScale);
+      if (currIdx > 0) {
+        adjustZoom(scaleSteps[currIdx - 1]);
+        saveReadingPosition(true);
+      }
+    });
+  }
 
   // Previous Page
-  btnPrevPage.addEventListener('click', () => {
-    const currPage = parseInt(currentPageEl.textContent);
-    if (currPage > 1) {
-      navigateToPage(currPage - 1);
-    }
-  });
+  if (btnPrevPage) {
+    btnPrevPage.addEventListener('click', () => {
+      const currPage = parseInt(currentPageEl ? currentPageEl.textContent : '1');
+      if (currPage > 1) {
+        navigateToPage(currPage - 1);
+      }
+    });
+  }
 
   // --- SEARCH BAR OVERLAY EVENT LISTENERS (Ctrl+F) ---
   setupSearchOverlayListeners();
@@ -1405,12 +1465,14 @@ function setupEventListeners() {
 
 
   // Next Page
-  btnNextPage.addEventListener('click', () => {
-    const currPage = parseInt(currentPageEl.textContent);
-    if (currPage < pdfDoc.numPages) {
-      navigateToPage(currPage + 1);
-    }
-  });
+  if (btnNextPage) {
+    btnNextPage.addEventListener('click', () => {
+      const currPage = parseInt(currentPageEl ? currentPageEl.textContent : '1');
+      if (pdfDoc && currPage < pdfDoc.numPages) {
+        navigateToPage(currPage + 1);
+      }
+    });
+  }
 
   // --- TOC DRAWER EVENT LISTENERS ---
   const btnToggleToc = document.getElementById('btn-toggle-toc');
@@ -1440,15 +1502,17 @@ function setupEventListeners() {
     });
   }
 
-  window.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      saveReadingPosition(true);
-    }
-  });
+  if (typeof window !== 'undefined') {
+    window.addEventListener('visibilitychange', () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        saveReadingPosition(true);
+      }
+    });
 
-  window.addEventListener('beforeunload', () => {
-    saveReadingPosition(true);
-  });
+    window.addEventListener('beforeunload', () => {
+      saveReadingPosition(true);
+    });
+  }
 
   // --- BIONIC READING & RULER TOOLBAR TOGGLE LISTENERS ---
   const btnToggleBionic = document.getElementById('btn-toggle-bionic');
@@ -1487,7 +1551,7 @@ function setupEventListeners() {
     if (area === 'local') {
       chrome.storage.local.get(null, (settings) => {
         // If mode is changed back to classic, we should reload this page back to original PDF!
-        if (settings.mode === 'classic') {
+        if (settings.mode === 'classic' && pdfUrl) {
           window.location.href = pdfUrl;
         } else {
           applyThemeFilters(settings);
@@ -1541,29 +1605,37 @@ function setupEventListeners() {
   const annotationBar = document.getElementById('annotation-bar');
 
   // Toggle sub-toolbar
-  btnToggleAnnotate.addEventListener('click', () => {
-    const isHidden = annotationBar.classList.toggle('hidden');
-    btnToggleAnnotate.classList.toggle('active', !isHidden);
-    
-    // Default back to Select tool when toggled
-    setTool('select');
-  });
+  if (btnToggleAnnotate) {
+    btnToggleAnnotate.addEventListener('click', () => {
+      const isHidden = annotationBar ? annotationBar.classList.toggle('hidden') : true;
+      btnToggleAnnotate.classList.toggle('active', !isHidden);
+      
+      // Default back to Select tool when toggled
+      setTool('select');
+    });
+  }
 
   // Tool switches
   function setTool(tool) {
     currentTool = tool;
-    document.getElementById('btn-tool-select').classList.toggle('active', tool === 'select');
-    document.getElementById('btn-tool-draw').classList.toggle('active', tool === 'draw');
-    document.getElementById('btn-tool-text').classList.toggle('active', tool === 'text');
+    const btnSelect = document.getElementById('btn-tool-select');
+    const btnDraw = document.getElementById('btn-tool-draw');
+    const btnText = document.getElementById('btn-tool-text');
+    if (btnSelect) btnSelect.classList.toggle('active', tool === 'select');
+    if (btnDraw) btnDraw.classList.toggle('active', tool === 'draw');
+    if (btnText) btnText.classList.toggle('active', tool === 'text');
     updateToolsState();
   }
 
-  document.getElementById('btn-tool-select').addEventListener('click', () => setTool('select'));
-  document.getElementById('btn-tool-draw').addEventListener('click', () => setTool('draw'));
-  document.getElementById('btn-tool-text').addEventListener('click', () => setTool('text'));
+  const btnToolSelect = document.getElementById('btn-tool-select');
+  const btnToolDraw = document.getElementById('btn-tool-draw');
+  const btnToolText = document.getElementById('btn-tool-text');
+  if (btnToolSelect) btnToolSelect.addEventListener('click', () => setTool('select'));
+  if (btnToolDraw) btnToolDraw.addEventListener('click', () => setTool('draw'));
+  if (btnToolText) btnToolText.addEventListener('click', () => setTool('text'));
 
   // Color picker
-  const colorDots = document.querySelectorAll('.color-dot');
+  const colorDots = typeof document !== 'undefined' && document.querySelectorAll ? document.querySelectorAll('.color-dot') : [];
   colorDots.forEach(dot => {
     dot.addEventListener('click', () => {
       colorDots.forEach(d => d.classList.remove('active'));
@@ -1575,46 +1647,53 @@ function setupEventListeners() {
   // Thickness slider
   const penSizeInput = document.getElementById('pen-size');
   const penSizeVal = document.getElementById('pen-size-value');
-  penSizeInput.addEventListener('input', (e) => {
-    currentThickness = parseInt(e.target.value);
-    penSizeVal.textContent = `${currentThickness}px`;
-  });
+  if (penSizeInput) {
+    penSizeInput.addEventListener('input', (e) => {
+      currentThickness = parseInt(e.target.value);
+      if (penSizeVal) penSizeVal.textContent = `${currentThickness}px`;
+    });
+  }
 
   // Clear current page annotations
-  document.getElementById('btn-clear-page').addEventListener('click', () => {
-    const wrapper = getActivePageInViewport();
-    if (wrapper) {
-      // Clear drawings
-      const canvas = wrapper.querySelector('.drawing-canvas');
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const btnClearPage = document.getElementById('btn-clear-page');
+  if (btnClearPage) {
+    btnClearPage.addEventListener('click', () => {
+      const wrapper = getActivePageInViewport();
+      if (wrapper) {
+        // Clear drawings
+        const canvas = wrapper.querySelector('.drawing-canvas');
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        // Clear text annotations
+        const texts = wrapper.querySelectorAll('.text-annotation');
+        texts.forEach(t => t.remove());
       }
-      // Clear text annotations
-      const texts = wrapper.querySelectorAll('.text-annotation');
-      texts.forEach(t => t.remove());
-    }
-  });
+    });
+  }
 
   // --- HIGHLIGHT & SIDE DRAWER EVENT LISTENERS ---
   setupHighlightSelectionListeners();
   renderNotesDrawer();
 
   // 4. Drag & Drop Fallback Event Listeners
-  window.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  });
+  if (typeof window !== 'undefined') {
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
 
-  window.addEventListener('drop', (e) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file && file.type === 'application/pdf') {
-      loadLocalFile(file);
-    } else {
-      alert('Please drop a valid PDF file.');
-    }
-  });
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const file = e.dataTransfer.files[0];
+      if (file && file.type === 'application/pdf') {
+        loadLocalFile(file);
+      } else {
+        alert('Please drop a valid PDF file.');
+      }
+    });
+  }
 }
 
 // -------------------------------------------------------------------------
@@ -2105,7 +2184,7 @@ function updateSearchCountUI() {
 }
 
 function setupKeyboardShortcuts() {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
 
   window.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
@@ -2254,19 +2333,21 @@ function setupFileOpenAndDragDropListeners() {
     });
   }
 
-  window.addEventListener('dragover', (e) => {
-    e.preventDefault();
-  });
+  if (typeof window !== 'undefined') {
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
 
-  window.addEventListener('drop', (e) => {
-    e.preventDefault();
-    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-        loadPdfFileFromDisk(file);
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+        const file = e.dataTransfer.files[0];
+        if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+          loadPdfFileFromDisk(file);
+        }
       }
-    }
-  });
+    });
+  }
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -2302,7 +2383,11 @@ if (typeof module !== 'undefined' && module.exports) {
     openSettingsModal,
     closeSettingsModal,
     loadPdfFileFromDisk,
-    setupFileOpenAndDragDropListeners
+    setupFileOpenAndDragDropListeners,
+    sanitizeFileUrl,
+    loadPdf,
+    setupEventListeners,
+    handleParameterlessStartup
   };
 }
 

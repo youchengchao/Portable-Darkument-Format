@@ -80,11 +80,6 @@ function isPdfUrl(url) {
     if (url.includes('viewer.html') || url.includes('native=true')) {
       return false;
     }
-    // Local file:/// PDFs are rendered natively in Dark Mode by content.js
-    // This avoids Chromium extension tab CORS errors and prevents dropzone screens.
-    if (url.startsWith('file:///')) {
-      return false;
-    }
     const cleanUrl = url.split('?')[0].split('#')[0].toLowerCase();
     if (cleanUrl.endsWith('.pdf')) {
       return true;
@@ -187,6 +182,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       return true;
     }
+  } else if (message.action === 'read_file_bytes') {
+    handleReadFileBytes(message, sender, sendResponse);
+    return true;
   } else if (message.action === 'track_reading') {
     handleTrackReading(message, sendResponse);
     return true;
@@ -199,6 +197,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+// Handle reading file bytes for local PDF access in viewer.html
+function handleReadFileBytes(message, sender, sendResponse) {
+  const url = message ? message.url : null;
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get('pendingLocalPdf', (res) => {
+      if (res && res.pendingLocalPdf && res.pendingLocalPdf.data && (!url || res.pendingLocalPdf.url === url)) {
+        sendResponse({ success: true, data: res.pendingLocalPdf.data });
+        return;
+      }
+
+      const tabId = sender && sender.tab ? sender.tab.id : null;
+      if (tabId && typeof chrome !== 'undefined' && chrome.scripting && chrome.scripting.executeScript) {
+        chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          func: (targetUrl) => {
+            return fetch(targetUrl || window.location.href)
+              .then(r => r.arrayBuffer())
+              .then(buf => {
+                const bytes = new Uint8Array(buf);
+                let binary = '';
+                const chunkSize = 0x8000;
+                for (let i = 0; i < bytes.length; i += chunkSize) {
+                  binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+                }
+                return btoa(binary);
+              });
+          },
+          args: [url]
+        }, (results) => {
+          if (chrome.runtime.lastError || !results || !results[0] || !results[0].result) {
+            sendResponse({ success: false, error: chrome.runtime.lastError ? chrome.runtime.lastError.message : 'executeScript failed' });
+          } else {
+            sendResponse({ success: true, data: results[0].result });
+          }
+        });
+      } else {
+        sendResponse({ success: false, error: 'File data unavailable' });
+      }
+    });
+  } else {
+    sendResponse({ success: false, error: 'Storage unavailable' });
+  }
+}
 
 // Update reading analytics & daily streak counter
 function handleTrackReading(message, callback) {
@@ -362,7 +404,8 @@ if (typeof module !== 'undefined' && module.exports) {
     updateReadingStats,
     isNightTime,
     setupAutoNightAlarm,
-    checkAutoNightSchedule
+    checkAutoNightSchedule,
+    handleReadFileBytes
   };
 }
 
