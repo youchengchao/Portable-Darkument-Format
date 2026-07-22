@@ -1,3 +1,75 @@
+const BUILT_IN_PROFILES = {
+  'default': {
+    id: 'default',
+    name: 'Default Dark',
+    isBuiltIn: true,
+    mode: 'enhanced',
+    theme: 'oled',
+    brightness: 100,
+    contrast: 100,
+    grayscale: 0,
+    rulerHeight: 40,
+    bionicReading: false,
+    protectDiagrams: true,
+    settings: {
+      mode: 'enhanced',
+      theme: 'oled',
+      brightness: 100,
+      contrast: 100,
+      grayscale: 0,
+      rulerHeight: 40,
+      bionicReading: false,
+      protectDiagrams: true
+    }
+  },
+  'built_in_night': {
+    id: 'built_in_night',
+    name: 'Deep Night Focus',
+    isBuiltIn: true,
+    mode: 'enhanced',
+    theme: 'slate',
+    brightness: 80,
+    contrast: 110,
+    grayscale: 10,
+    rulerHeight: 30,
+    bionicReading: false,
+    protectDiagrams: true,
+    settings: {
+      mode: 'enhanced',
+      theme: 'slate',
+      brightness: 80,
+      contrast: 110,
+      grayscale: 10,
+      rulerHeight: 30,
+      bionicReading: false,
+      protectDiagrams: true
+    }
+  },
+  'built_in_ereader': {
+    id: 'built_in_ereader',
+    name: 'Warm E-Reader',
+    isBuiltIn: true,
+    mode: 'enhanced',
+    theme: 'sepia',
+    brightness: 90,
+    contrast: 95,
+    grayscale: 0,
+    rulerHeight: 50,
+    bionicReading: true,
+    protectDiagrams: true,
+    settings: {
+      mode: 'enhanced',
+      theme: 'sepia',
+      brightness: 90,
+      contrast: 95,
+      grayscale: 0,
+      rulerHeight: 50,
+      bionicReading: true,
+      protectDiagrams: true
+    }
+  }
+};
+
 const DEFAULTS = {
   active: true,
   mode: 'enhanced',
@@ -20,7 +92,9 @@ const DEFAULTS = {
     goldAccent: false,
     promptDismissedCount: 0,
     lastPromptDate: ''
-  }
+  },
+  activeProfileId: 'default',
+  profiles: BUILT_IN_PROFILES
 };
 
 // UI Elements
@@ -55,6 +129,13 @@ const valGrayscale = typeof document !== 'undefined' ? document.getElementById('
 
 const resetLink = typeof document !== 'undefined' ? document.getElementById('reset-settings') : null;
 const fileUrlWarning = typeof document !== 'undefined' ? document.getElementById('file-url-warning') : null;
+
+// Preference Profile Elements
+const profileSelect = typeof document !== 'undefined' ? document.getElementById('profile-select') : null;
+const btnApplyProfile = typeof document !== 'undefined' ? document.getElementById('btn-apply-profile') : null;
+const btnDeleteProfile = typeof document !== 'undefined' ? document.getElementById('btn-delete-profile') : null;
+const profileNameInput = typeof document !== 'undefined' ? document.getElementById('profile-name-input') : null;
+const btnSaveProfile = typeof document !== 'undefined' ? document.getElementById('btn-save-profile') : null;
 
 // Load settings on open
 if (typeof document !== 'undefined') {
@@ -220,6 +301,11 @@ function applySettingsToUI(settings) {
       document.body.classList.remove('theme-gold-accent');
     }
   }
+
+  // Preference Profile dropdown update
+  const currentProfiles = { ...BUILT_IN_PROFILES, ...(settings.profiles || {}) };
+  const currentActiveProfileId = settings.activeProfileId || 'default';
+  renderProfileDropdown(currentProfiles, currentActiveProfileId);
 }
 
 // Toggle enabled/disabled layout styling
@@ -403,6 +489,37 @@ if (goldAccentToggle) {
   });
 }
 
+// Profile Event Listeners
+if (btnApplyProfile) {
+  btnApplyProfile.addEventListener('click', () => {
+    const selected = profileSelect ? profileSelect.value : 'default';
+    applyProfile(selected);
+  });
+}
+
+if (btnSaveProfile) {
+  btnSaveProfile.addEventListener('click', () => {
+    saveCurrentProfile();
+  });
+}
+
+if (btnDeleteProfile) {
+  btnDeleteProfile.addEventListener('click', () => {
+    const selected = profileSelect ? profileSelect.value : null;
+    if (selected) deleteProfile(selected);
+  });
+}
+
+if (profileSelect) {
+  profileSelect.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (btnDeleteProfile) {
+      const isBuiltIn = val === 'default' || val === 'built_in_night' || val === 'built_in_ereader';
+      btnDeleteProfile.disabled = isBuiltIn;
+    }
+  });
+}
+
 // Reset Settings
 if (resetLink) {
   resetLink.addEventListener('click', (e) => {
@@ -544,6 +661,84 @@ function renderDailyChart(container, dailyStats) {
   });
 }
 
+function renderReadingHeatmap(dailyStats = {}, isSupporter = false, goldAccent = false) {
+  if (typeof document === 'undefined') return;
+  const gridEl = document.getElementById('reading-heatmap-grid');
+  const totalDaysEl = document.getElementById('heatmap-total-days');
+  const wrapperEl = document.getElementById('reading-heatmap-wrapper');
+
+  if (!gridEl) return;
+
+  const isGold = Boolean(isSupporter || goldAccent);
+  const cardEl = gridEl.closest ? gridEl.closest('.heatmap-card') : null;
+  [cardEl, wrapperEl, gridEl].forEach(el => {
+    if (el && el.classList) {
+      if (isGold) {
+        el.classList.add('supporter-heatmap');
+        el.classList.add('theme-gold-accent');
+      } else {
+        el.classList.remove('supporter-heatmap');
+        el.classList.remove('theme-gold-accent');
+      }
+    }
+  });
+
+  gridEl.innerHTML = '';
+  let activeDaysCount = 0;
+  const now = new Date();
+
+  // Generate grid cells for 365 days ending today
+  for (let i = 364; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const dateISO = d.toISOString().split('T')[0];
+    const stat = (dailyStats && dailyStats[dateISO]) ? dailyStats[dateISO] : {};
+    const seconds = stat.seconds || 0;
+    const pages = stat.pages !== undefined ? stat.pages : (stat.pagesRead !== undefined ? stat.pagesRead : 0);
+    const mins = Math.round(seconds / 60);
+
+    let level = 0;
+    if (mins >= 60) {
+      level = 4;
+    } else if (mins >= 30) {
+      level = 3;
+    } else if (mins >= 15) {
+      level = 2;
+    } else if (mins >= 1) {
+      level = 1;
+    } else {
+      level = 0;
+    }
+
+    if (mins > 0) {
+      activeDaysCount++;
+    }
+
+    const cell = document.createElement('div');
+    cell.className = `heatmap-cell level-${level}`;
+    const titleText = `${dateISO}: ${mins} mins, ${pages} pages`;
+    cell.title = titleText;
+    if (cell.setAttribute) {
+      cell.setAttribute('title', titleText);
+    }
+    if (cell.dataset) {
+      cell.dataset.date = dateISO;
+      cell.dataset.mins = mins;
+      cell.dataset.pages = pages;
+    }
+
+    gridEl.appendChild(cell);
+  }
+
+  if (totalDaysEl) {
+    totalDaysEl.textContent = `${activeDaysCount} active day${activeDaysCount === 1 ? '' : 's'} in past year`;
+  }
+
+  if (wrapperEl) {
+    wrapperEl.scrollLeft = wrapperEl.scrollWidth;
+  }
+}
+
 function renderPopupStats() {
   if (typeof document === 'undefined') return;
   const streakBadgeEl = document.getElementById('top-streak-badge');
@@ -555,16 +750,21 @@ function renderPopupStats() {
   if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
     if (streakBadgeEl) streakBadgeEl.textContent = '🔥 0 Day Streak';
     if (streakValEl) streakValEl.textContent = '0 Day Streak';
+    renderReadingHeatmap({}, false, false);
     return;
   }
 
-  chrome.storage.local.get(['analytics'], (result) => {
+  chrome.storage.local.get(['analytics', 'supporter'], (result) => {
     const analytics = result.analytics || {
       totalReadingTimeSeconds: 0,
       totalPagesRead: 0,
       dailyStats: {},
       currentStreak: 0,
       lastReadDate: ''
+    };
+    const supporter = result.supporter || {
+      isSupporter: false,
+      goldAccent: false
     };
 
     const activeStreak = calculateActiveStreak(analytics);
@@ -593,6 +793,12 @@ function renderPopupStats() {
     if (chartContainer) {
       renderDailyChart(chartContainer, analytics.dailyStats || {});
     }
+
+    renderReadingHeatmap(
+      analytics.dailyStats || {},
+      supporter.isSupporter === true,
+      supporter.goldAccent === true
+    );
   });
 }
 
@@ -852,16 +1058,223 @@ function setupBackupRestoreListeners() {
 }
 
 
+// -------------------------------------------------------------------------
+// Feature R1: Custom Preference Profiles Logic
+// -------------------------------------------------------------------------
+
+function renderProfileDropdown(profiles, activeProfileId) {
+  const select = typeof document !== 'undefined' ? document.getElementById('profile-select') : null;
+  const btnDelete = typeof document !== 'undefined' ? document.getElementById('btn-delete-profile') : null;
+  if (!select) return;
+
+  const currentProfiles = { ...BUILT_IN_PROFILES, ...(profiles || {}) };
+  const currentActive = activeProfileId || 'default';
+
+  select.innerHTML = '';
+  Object.keys(currentProfiles).forEach(id => {
+    const prof = currentProfiles[id];
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = prof ? (prof.name || id) : id;
+    if (id === currentActive) {
+      opt.selected = true;
+    }
+    select.appendChild(opt);
+  });
+
+  select.value = currentActive;
+
+  if (btnDelete) {
+    const selectedVal = select.value;
+    const selectedProf = currentProfiles[selectedVal];
+    const isBuiltIn = selectedProf ? (selectedProf.isBuiltIn === true || selectedVal === 'default' || selectedVal === 'built_in_night' || selectedVal === 'built_in_ereader') : true;
+    btnDelete.disabled = isBuiltIn;
+  }
+}
+
+function saveCurrentProfile(profileName, callback) {
+  const inputEl = typeof document !== 'undefined' ? document.getElementById('profile-name-input') : null;
+  const rawName = typeof profileName === 'string' ? profileName : (inputEl ? inputEl.value : '');
+  const trimmedName = (rawName || '').trim().slice(0, 25);
+
+  if (!trimmedName) {
+    if (typeof callback === 'function') callback(false);
+    return;
+  }
+
+  if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+    if (typeof callback === 'function') callback(false);
+    return;
+  }
+
+  chrome.storage.local.get(null, (store) => {
+    const payload = {
+      mode: store.mode || DEFAULTS.mode,
+      theme: store.theme || DEFAULTS.theme,
+      brightness: store.brightness !== undefined ? store.brightness : DEFAULTS.brightness,
+      contrast: store.contrast !== undefined ? store.contrast : DEFAULTS.contrast,
+      grayscale: store.grayscale !== undefined ? store.grayscale : DEFAULTS.grayscale,
+      rulerHeight: store.rulerHeight !== undefined ? store.rulerHeight : DEFAULTS.rulerHeight,
+      bionicReading: store.bionicReading !== undefined ? store.bionicReading : DEFAULTS.bionicReading,
+      protectDiagrams: store.protectDiagrams !== undefined ? store.protectDiagrams : DEFAULTS.protectDiagrams
+    };
+
+    const newId = 'custom_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+    const newProfile = {
+      id: newId,
+      name: trimmedName,
+      isBuiltIn: false,
+      mode: payload.mode,
+      theme: payload.theme,
+      brightness: payload.brightness,
+      contrast: payload.contrast,
+      grayscale: payload.grayscale,
+      rulerHeight: payload.rulerHeight,
+      bionicReading: payload.bionicReading,
+      protectDiagrams: payload.protectDiagrams,
+      settings: payload
+    };
+
+    const existingProfiles = { ...BUILT_IN_PROFILES, ...(store.profiles || {}) };
+    existingProfiles[newId] = newProfile;
+
+    chrome.storage.local.set({ profiles: existingProfiles, activeProfileId: newId }, () => {
+      if (inputEl) inputEl.value = '';
+      renderProfileDropdown(existingProfiles, newId);
+      if (typeof callback === 'function') callback(newProfile);
+    });
+  });
+}
+
+function applyProfile(profileId, callback) {
+  if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+
+  chrome.storage.local.get(['profiles'], (res) => {
+    const profiles = { ...BUILT_IN_PROFILES, ...(res.profiles || {}) };
+    const targetProfile = profiles[profileId] || profiles['default'] || BUILT_IN_PROFILES['default'];
+    const s = targetProfile.settings || targetProfile;
+
+    const newSettings = {
+      mode: s.mode,
+      theme: s.theme,
+      brightness: s.brightness,
+      contrast: s.contrast,
+      grayscale: s.grayscale,
+      rulerHeight: s.rulerHeight,
+      bionicReading: s.bionicReading,
+      protectDiagrams: s.protectDiagrams,
+      activeProfileId: profileId
+    };
+
+    chrome.storage.local.set(newSettings, () => {
+      chrome.storage.local.get(null, (allSettings) => {
+        applySettingsToUI(allSettings);
+
+        if (chrome.tabs) {
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0] && tabs[0].url) {
+              const url = tabs[0].url.toLowerCase();
+              if (url.endsWith('.pdf') || url.includes('viewer.html') || url.startsWith('file:///')) {
+                chrome.tabs.reload(tabs[0].id);
+              }
+            }
+          });
+        }
+
+        if (typeof callback === 'function') callback();
+      });
+    });
+  });
+}
+
+function deleteProfile(profileId, callback) {
+  const cb = typeof callback === 'function' ? callback : null;
+
+  if (!profileId) {
+    if (cb) cb(false);
+    return;
+  }
+
+  const isBuiltIn = profileId === 'default' || profileId === 'built_in_night' || profileId === 'built_in_ereader' || (BUILT_IN_PROFILES[profileId] && BUILT_IN_PROFILES[profileId].isBuiltIn);
+  if (isBuiltIn) {
+    if (cb) cb(false);
+    return;
+  }
+
+  if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) {
+    if (cb) cb(false);
+    return;
+  }
+
+  chrome.storage.local.get(['profiles', 'activeProfileId'], (res) => {
+    const profiles = { ...BUILT_IN_PROFILES, ...(res.profiles || {}) };
+    if (profiles[profileId] && !profiles[profileId].isBuiltIn) {
+      delete profiles[profileId];
+      const activeWasDeleted = res.activeProfileId === profileId;
+      const newActiveId = activeWasDeleted ? 'default' : (res.activeProfileId || 'default');
+
+      if (activeWasDeleted) {
+        const defaultProfile = profiles['default'] || BUILT_IN_PROFILES['default'];
+        const s = defaultProfile.settings || defaultProfile;
+        const newSettings = {
+          profiles: profiles,
+          activeProfileId: 'default',
+          mode: s.mode,
+          theme: s.theme,
+          brightness: s.brightness,
+          contrast: s.contrast,
+          grayscale: s.grayscale,
+          rulerHeight: s.rulerHeight,
+          bionicReading: s.bionicReading,
+          protectDiagrams: s.protectDiagrams
+        };
+        chrome.storage.local.set(newSettings, () => {
+          chrome.storage.local.get(null, (allSettings) => {
+            const activeSettings = { ...DEFAULTS, ...allSettings };
+            applySettingsToUI(activeSettings);
+
+            if (typeof chrome !== 'undefined' && chrome.tabs) {
+              chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0] && tabs[0].url) {
+                  const url = tabs[0].url.toLowerCase();
+                  if (url.endsWith('.pdf') || url.includes('viewer.html') || url.startsWith('file:///')) {
+                    chrome.tabs.reload(tabs[0].id);
+                  }
+                }
+              });
+            }
+
+            if (cb) cb(true);
+          });
+        });
+      } else {
+        chrome.storage.local.set({ profiles: profiles, activeProfileId: newActiveId }, () => {
+          renderProfileDropdown(profiles, newActiveId);
+          if (cb) cb(true);
+        });
+      }
+    } else {
+      if (cb) cb(false);
+    }
+  });
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     DEFAULTS,
+    BUILT_IN_PROFILES,
     applySettingsToUI,
     saveSetting,
     saveSupporterSetting,
     exportHighlights,
     calculateActiveStreak,
     renderDailyChart,
-    renderPopupStats
+    renderReadingHeatmap,
+    renderPopupStats,
+    renderProfileDropdown,
+    saveCurrentProfile,
+    applyProfile,
+    deleteProfile
   };
 }
 

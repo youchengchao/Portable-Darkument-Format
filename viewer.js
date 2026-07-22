@@ -7,13 +7,232 @@ let pdfDoc = null;
 let currentScale = 1.0;
 const scaleSteps = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 let pdfUrl = '';
+let pageObserver = null;
+
+// Structured Tab Session Model (Feature R3)
+class TabSession {
+  constructor(options = {}) {
+    this.id = options.id || `tab_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    this.url = options.url || '';
+    this.title = options.title || 'Untitled';
+    this.pdfDoc = options.pdfDoc || null;
+    this.arrayBuffer = options.arrayBuffer || null;
+    this.numPages = options.numPages || 0;
+    this.activePageNum = options.activePageNum || 1;
+    this.currentScale = options.currentScale || 1.0;
+    this.scrollTop = options.scrollTop || 0;
+    this.scrollLeft = options.scrollLeft || 0;
+    this.tocItems = options.tocItems || [];
+    this.visitedPagesSet = options.visitedPagesSet || new Set();
+    this.aspectRatio = options.aspectRatio || 1.414;
+    this.isLoaded = options.isLoaded || false;
+  }
+}
+
+// Multi-Tab Controller Manager (Feature R3)
+const TabManager = {
+  tabs: [],
+  activeTabId: null,
+
+  getActiveTab() {
+    return this.tabs.find(t => t.id === this.activeTabId) || null;
+  },
+
+  createTab(url = '', title = 'New Tab', dataBuffer = null) {
+    const session = new TabSession({
+      id: `tab_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      url: url,
+      title: title || 'New Tab',
+      arrayBuffer: dataBuffer,
+      isLoaded: false
+    });
+    this.tabs.push(session);
+    this.switchToTab(session.id);
+    return session;
+  },
+
+  switchTab(tabId) {
+    return this.switchToTab(tabId);
+  },
+
+  switchToTab(tabId) {
+    if (typeof ttsController !== 'undefined' && ttsController && typeof ttsController.stop === 'function') {
+      ttsController.stop();
+    }
+    const outgoing = this.getActiveTab();
+    if (outgoing) {
+      const viewArea = typeof document !== 'undefined' ? document.getElementById('pdf-view-area') : null;
+      if (viewArea) {
+        outgoing.scrollTop = viewArea.scrollTop || 0;
+        outgoing.scrollLeft = viewArea.scrollLeft || 0;
+      }
+      outgoing.currentScale = outgoing.currentScale || currentScale || 1.0;
+      outgoing.activePageNum = outgoing.activePageNum || activePageNum || 1;
+      outgoing.visitedPagesSet = visitedPagesSet || outgoing.visitedPagesSet;
+      if (typeof currentTocItems !== 'undefined') outgoing.tocItems = currentTocItems || outgoing.tocItems;
+      if (pdfDoc) outgoing.pdfDoc = pdfDoc;
+      if (pdfUrl) outgoing.url = pdfUrl;
+    }
+
+    const incoming = this.tabs.find(t => t.id === tabId);
+    if (!incoming) return;
+
+    this.activeTabId = incoming.id;
+
+    pdfDoc = incoming.pdfDoc;
+    pdfUrl = incoming.url;
+    activePageNum = incoming.activePageNum || 1;
+    currentScale = incoming.currentScale || 1.0;
+    if (typeof currentTocItems !== 'undefined') currentTocItems = incoming.tocItems || [];
+    visitedPagesSet = incoming.visitedPagesSet || new Set();
+
+    const displayTitle = incoming.title || 'PDF Document';
+    if (typeof document !== 'undefined') {
+      document.title = displayTitle;
+      const titleEl = document.getElementById('doc-title');
+      if (titleEl) titleEl.textContent = displayTitle;
+      const totalPagesEl = document.getElementById('total-pages');
+      if (totalPagesEl) totalPagesEl.textContent = incoming.numPages || 1;
+      const currentPageEl = document.getElementById('current-page');
+      if (currentPageEl) currentPageEl.textContent = activePageNum;
+      const zoomValueEl = document.getElementById('zoom-value');
+      if (zoomValueEl) zoomValueEl.textContent = `${Math.round(currentScale * 100)}%`;
+    }
+
+    this.renderTabBarUI();
+
+    if (incoming.pdfDoc) {
+      const dropzone = typeof document !== 'undefined' ? document.getElementById('dropzone-overlay') : null;
+      if (dropzone) dropzone.classList.add('hidden');
+
+      if (typeof createPagePlaceholders === 'function') {
+        createPagePlaceholders(incoming.numPages, incoming.aspectRatio || 1.414, incoming.currentScale || 1.0);
+      }
+      if (typeof setupIntersectionObserver === 'function') {
+        setupIntersectionObserver();
+      }
+
+      const viewArea = typeof document !== 'undefined' ? document.getElementById('pdf-view-area') : null;
+      if (viewArea) {
+        viewArea.scrollTop = incoming.scrollTop || 0;
+        viewArea.scrollLeft = incoming.scrollLeft || 0;
+      }
+
+      if (typeof renderTocTree === 'function') {
+        renderTocTree(incoming.tocItems);
+      }
+      if (typeof renderNotesDrawer === 'function') {
+        renderNotesDrawer();
+      }
+    } else if (incoming.url) {
+      if (typeof loadPdf === 'function') {
+        loadPdf(incoming.url);
+      }
+    } else if (incoming.arrayBuffer) {
+      if (typeof loadPdfFromData === 'function') {
+        loadPdfFromData(incoming.arrayBuffer);
+      }
+    } else {
+      const pagesContainer = typeof document !== 'undefined' ? document.getElementById('pages-container') : null;
+      if (pagesContainer) pagesContainer.innerHTML = '';
+      const dropzone = typeof document !== 'undefined' ? document.getElementById('dropzone-overlay') : null;
+      if (dropzone) dropzone.classList.remove('hidden');
+      if (typeof renderTocTree === 'function') renderTocTree([]);
+      if (typeof renderNotesDrawer === 'function') renderNotesDrawer();
+    }
+  },
+
+  closeTab(tabId) {
+    if (typeof ttsController !== 'undefined' && ttsController && typeof ttsController.stop === 'function') {
+      ttsController.stop();
+    }
+    const index = this.tabs.findIndex(t => t.id === tabId);
+    if (index === -1) return;
+
+    const tab = this.tabs[index];
+    if (tab && tab.pdfDoc) {
+      try {
+        tab.pdfDoc.destroy();
+      } catch (e) {}
+      tab.pdfDoc = null;
+      tab.arrayBuffer = null;
+    }
+
+    this.tabs.splice(index, 1);
+
+    if (this.tabs.length === 0) {
+      this.createTab('', 'PDF Dark Mode');
+      return;
+    }
+
+    if (this.activeTabId === tabId) {
+      const nextIndex = Math.min(index, this.tabs.length - 1);
+      this.switchToTab(this.tabs[nextIndex].id);
+    } else {
+      this.renderTabBarUI();
+    }
+  },
+
+  renderTabBarUI() {
+    if (typeof document === 'undefined') return;
+    const tabListEl = document.getElementById('tab-list');
+    if (!tabListEl) return;
+
+    tabListEl.innerHTML = '';
+
+    this.tabs.forEach(tab => {
+      const tabEl = document.createElement('div');
+      tabEl.className = `tab-item${tab.id === this.activeTabId ? ' active' : ''}`;
+      tabEl.dataset.tabId = tab.id;
+
+      const iconEl = document.createElement('span');
+      iconEl.className = 'tab-icon';
+      iconEl.textContent = '📄';
+
+      const titleEl = document.createElement('span');
+      titleEl.className = 'tab-title';
+      titleEl.textContent = tab.title || 'Untitled';
+      titleEl.title = tab.title || 'Untitled';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'tab-close-btn';
+      closeBtn.textContent = '✕';
+      closeBtn.title = 'Close tab';
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeTab(tab.id);
+      });
+
+      tabEl.appendChild(iconEl);
+      tabEl.appendChild(titleEl);
+      tabEl.appendChild(closeBtn);
+
+      tabEl.addEventListener('click', () => {
+        if (tab.id !== this.activeTabId) {
+          this.switchToTab(tab.id);
+        }
+      });
+
+      tabListEl.appendChild(tabEl);
+    });
+
+    const btnAddTab = document.getElementById('btn-add-tab');
+    if (btnAddTab && !btnAddTab.dataset.bound) {
+      btnAddTab.dataset.bound = 'true';
+      btnAddTab.addEventListener('click', () => {
+        const fileInputPdf = document.getElementById('file-input-pdf');
+        if (fileInputPdf) fileInputPdf.click();
+      });
+    }
+  }
+};
 
 // Annotation State
 let currentTool = 'select'; // 'select', 'draw', 'text'
 let currentColor = '#ef4444'; // default red
 let currentThickness = 3;
 let activePageNum = 1;
-const visitedPagesSet = new Set();
+let visitedPagesSet = new Set();
 let lastReadingTick = Date.now();
 
 function sendTrackReading(data) {
@@ -54,6 +273,7 @@ if (typeof document !== 'undefined' && document.addEventListener) {
     pdfUrl = urlParams.get('file');
 
     if (pdfUrl === 'pending_local') {
+      const initialTab = TabManager.createTab('pending_local', 'Local PDF Document');
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.get(null, (res) => {
           applyThemeFilters(res);
@@ -65,6 +285,7 @@ if (typeof document !== 'undefined' && document.addEventListener) {
           if (pending && pending.data) {
             try {
               const filename = pending.name || 'Local PDF Document';
+              initialTab.title = filename;
               if (docTitle) docTitle.textContent = filename;
               document.title = filename;
               
@@ -94,20 +315,21 @@ if (typeof document !== 'undefined' && document.addEventListener) {
 
     // Handle case where viewer.html is opened directly without a PDF URL
     if (!pdfUrl) {
+      if (TabManager.tabs.length === 0) {
+        TabManager.createTab('', 'PDF Dark Mode');
+      }
       handleParameterlessStartup();
       return;
     }
 
-
-
-    // Set document title
+    let filename = 'PDF Document';
     try {
-      const filename = decodeURIComponent(pdfUrl.substring(pdfUrl.lastIndexOf('/') + 1));
-      if (docTitle) docTitle.textContent = filename || 'PDF Document';
-      document.title = filename || 'PDF Document';
-    } catch (e) {
-      if (docTitle) docTitle.textContent = 'PDF Document';
-    }
+      filename = decodeURIComponent(pdfUrl.substring(pdfUrl.lastIndexOf('/') + 1)) || 'PDF Document';
+    } catch (e) {}
+
+    TabManager.createTab(pdfUrl, filename);
+    if (docTitle) docTitle.textContent = filename;
+    document.title = filename;
 
     // Load and apply themes dynamically
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
@@ -185,6 +407,7 @@ function sanitizeFileUrl(url) {
 // Load the PDF via PDF.js or local XMLHttp/Fetch diagnostic pipeline
 function loadPdf(url) {
   if (!url) return;
+  if (typeof pdfjsLib === 'undefined') return;
   if (loadingSpinner) loadingSpinner.style.display = 'flex';
   url = sanitizeFileUrl(url);
 
@@ -196,13 +419,22 @@ function loadPdf(url) {
 
   loadingTask.promise.then(pdf => {
     pdfDoc = pdf;
+    const activeTab = TabManager.getActiveTab();
+    if (activeTab) {
+      activeTab.pdfDoc = pdf;
+      activeTab.numPages = pdf.numPages;
+      activeTab.isLoaded = true;
+      activeTab.url = url;
+    }
     if (totalPagesEl) totalPagesEl.textContent = pdf.numPages;
     if (loadingSpinner) loadingSpinner.style.display = 'none';
 
     pdf.getPage(1).then(page => {
       const viewport = page.getViewport({ scale: 1.0 });
       const aspectRatio = viewport.height / viewport.width;
-      createPagePlaceholders(pdf.numPages, aspectRatio);
+      if (activeTab) activeTab.aspectRatio = aspectRatio;
+      const targetScale = activeTab ? (activeTab.currentScale || currentScale || 1.0) : (currentScale || 1.0);
+      createPagePlaceholders(pdf.numPages, aspectRatio, targetScale);
       setupIntersectionObserver();
       restoreReadingPosition();
       loadTocOutline(pdf);
@@ -243,6 +475,7 @@ function loadPdf(url) {
 }
 
 function loadPdfFromData(arrayBuffer) {
+  if (typeof pdfjsLib === 'undefined') return;
 
   const loadingTask = pdfjsLib.getDocument({
     data: arrayBuffer,
@@ -252,6 +485,13 @@ function loadPdfFromData(arrayBuffer) {
   
   loadingTask.promise.then(pdf => {
     pdfDoc = pdf;
+    const activeTab = TabManager.getActiveTab();
+    if (activeTab) {
+      activeTab.pdfDoc = pdf;
+      activeTab.numPages = pdf.numPages;
+      activeTab.isLoaded = true;
+      if (pdfUrl) activeTab.url = pdfUrl;
+    }
     if (totalPagesEl) totalPagesEl.textContent = pdf.numPages;
     if (loadingSpinner) loadingSpinner.style.display = 'none';
 
@@ -259,8 +499,9 @@ function loadPdfFromData(arrayBuffer) {
     pdf.getPage(1).then(page => {
       const viewport = page.getViewport({ scale: 1.0 });
       const aspectRatio = viewport.height / viewport.width;
-      
-      createPagePlaceholders(pdf.numPages, aspectRatio);
+      if (activeTab) activeTab.aspectRatio = aspectRatio;
+      const targetScale = activeTab ? (activeTab.currentScale || currentScale || 1.0) : (currentScale || 1.0);
+      createPagePlaceholders(pdf.numPages, aspectRatio, targetScale);
       setupIntersectionObserver();
       restoreReadingPosition();
       loadTocOutline(pdf);
@@ -272,7 +513,8 @@ function loadPdfFromData(arrayBuffer) {
 }
 
 // Create placeholder wrappers for pages to enable lazy loading scroll
-function createPagePlaceholders(numPages, aspectRatio) {
+function createPagePlaceholders(numPages, aspectRatio, targetScale = 1.0) {
+  if (!pagesContainer) return;
   pagesContainer.innerHTML = '';
   
   for (let i = 1; i <= numPages; i++) {
@@ -287,48 +529,66 @@ function createPagePlaceholders(numPages, aspectRatio) {
     pagesContainer.appendChild(pageWrapper);
   }
   
-  // Set default page width based on viewport width
-  adjustZoom(1.0);
+  // Set page width based on target scale (default 1.0 if not specified)
+  adjustZoom(targetScale);
 }
 
 // Render page content inside the canvas
 function renderPage(pageNum) {
-  const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+  const wrapper = typeof document !== 'undefined' ? document.getElementById(`page-wrapper-${pageNum}`) : null;
   if (!wrapper || wrapper.dataset.rendered === 'true') return;
+
+  const targetTabId = TabManager.activeTabId;
+  if (targetTabId && TabManager.activeTabId !== targetTabId) return;
+  if (!pdfDoc) return;
 
   wrapper.dataset.rendered = 'true';
   
   // Show a loading text or small spinner in wrapper
-  const loader = document.createElement('div');
-  loader.className = 'spinner';
-  loader.style.position = 'absolute';
-  loader.style.top = 'calc(50% - 20px)';
-  loader.style.left = 'calc(50% - 20px)';
-  wrapper.appendChild(loader);
+  const loader = typeof document !== 'undefined' ? document.createElement('div') : null;
+  if (loader) {
+    loader.className = 'spinner';
+    loader.style.position = 'absolute';
+    loader.style.top = 'calc(50% - 20px)';
+    loader.style.left = 'calc(50% - 20px)';
+    wrapper.appendChild(loader);
+  }
 
   pdfDoc.getPage(pageNum).then(page => {
+    if (targetTabId && TabManager.activeTabId !== targetTabId) {
+      wrapper.dataset.rendered = 'false';
+      if (loader && loader.parentNode) loader.remove();
+      return;
+    }
+
     // Determine scale for canvas
     const viewport = page.getViewport({ scale: currentScale * 2 }); // Render at 2x scale for sharpness
     
-    const canvas = document.createElement('canvas');
-    canvas.className = 'pdf-page-canvas';
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    
-    // Fit canvas inside wrapper
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
+    const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+    if (canvas) {
+      canvas.className = 'pdf-page-canvas';
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+    }
 
-    const context = canvas.getContext('2d');
+    const context = canvas ? canvas.getContext('2d') : null;
     const renderContext = {
       canvasContext: context,
       viewport: viewport
     };
 
     page.render(renderContext).promise.then(() => {
+      if (targetTabId && TabManager.activeTabId !== targetTabId) {
+        wrapper.dataset.rendered = 'false';
+        if (loader && loader.parentNode) loader.remove();
+        return;
+      }
+
       // Remove loader and add canvas
-      loader.remove();
-      wrapper.appendChild(canvas);
+      if (loader && loader.parentNode) loader.remove();
+      if (canvas) wrapper.appendChild(canvas);
       
       // Render text layer for selection
       renderTextLayer(page, viewport, wrapper);
@@ -338,23 +598,35 @@ function renderPage(pageNum) {
 
       // Tag diagram & image elements in page wrapper for color protection
       tagProtectedElements(wrapper);
+    }).catch(err => {
+      wrapper.dataset.rendered = 'false';
+      if (loader && loader.parentNode) loader.remove();
     });
   }).catch(err => {
     console.error(`Error rendering page ${pageNum}:`, err);
     wrapper.dataset.rendered = 'false';
-    loader.remove();
+    if (loader && loader.parentNode) loader.remove();
   });
 }
 
 // Setup IntersectionObserver for lazy loading pages as they scroll
 function setupIntersectionObserver() {
+  if (pageObserver) {
+    try {
+      pageObserver.disconnect();
+    } catch (e) {}
+    pageObserver = null;
+  }
+
   const options = {
-    root: document.getElementById('pdf-view-area'),
+    root: typeof document !== 'undefined' ? document.getElementById('pdf-view-area') : null,
     rootMargin: '200px 0px', // start loading before they scroll into view
     threshold: 0.1
   };
 
-  const observer = new IntersectionObserver((entries) => {
+  if (typeof IntersectionObserver === 'undefined') return;
+
+  pageObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
         const pageNum = parseInt(entry.target.dataset.pageNumber);
@@ -374,8 +646,8 @@ function setupIntersectionObserver() {
   }, options);
 
   // Observe all page wrappers
-  const wrappers = document.querySelectorAll('.page-wrapper');
-  wrappers.forEach(wrapper => observer.observe(wrapper));
+  const wrappers = typeof document !== 'undefined' ? document.querySelectorAll('.page-wrapper') : [];
+  wrappers.forEach(wrapper => pageObserver.observe(wrapper));
 }
 
 // Zoom functionality
@@ -402,6 +674,10 @@ function adjustZoom(scale) {
       renderPage(parseInt(wrapper.dataset.pageNumber));
     }
   });
+
+  if (typeof ttsController !== 'undefined' && ttsController && typeof ttsController.rebindSpans === 'function') {
+    ttsController.rebindSpans();
+  }
 }
 
 // Render PDF text layer for text selection/search
@@ -1131,6 +1407,14 @@ function saveReadingPosition(immediate = false) {
     const page = activePageNum || 1;
     const zoom = currentScale || 1.0;
 
+    const activeTab = TabManager.getActiveTab();
+    if (activeTab) {
+      activeTab.scrollTop = scrollTop;
+      activeTab.scrollLeft = scrollLeft;
+      activeTab.activePageNum = page;
+      activeTab.currentScale = zoom;
+    }
+
     const posData = {
       page: page,
       scrollTop: scrollTop,
@@ -1286,6 +1570,8 @@ function loadTocOutline(pdf) {
     }
     processOutlineItems(outline).then(processedTree => {
       currentTocItems = processedTree;
+      const activeTab = TabManager.getActiveTab();
+      if (activeTab) activeTab.tocItems = processedTree;
       renderTocTree(processedTree);
     }).catch(() => {
       renderTocTree([]);
@@ -1462,6 +1748,11 @@ function setupEventListeners() {
   // --- FILE OPEN & DRAG AND DROP LISTENERS ---
   setupFileOpenAndDragDropListeners();
 
+  // --- TEXT-TO-SPEECH (TTS) NARRATION LISTENERS ---
+  if (typeof ttsController !== 'undefined' && ttsController) {
+    ttsController.init();
+  }
+
 
 
   // Next Page
@@ -1511,6 +1802,9 @@ function setupEventListeners() {
 
     window.addEventListener('beforeunload', () => {
       saveReadingPosition(true);
+      if (typeof ttsController !== 'undefined' && ttsController && typeof ttsController.stop === 'function') {
+        ttsController.stop();
+      }
     });
   }
 
@@ -2302,15 +2596,511 @@ function loadPdfFileFromDisk(file) {
   const reader = new FileReader();
   reader.onload = function(evt) {
     const arrayBuffer = evt.target.result;
-    pdfUrl = file.name;
-    if (docTitle) docTitle.textContent = file.name;
-    document.title = file.name;
-    const dropzone = document.getElementById('dropzone-overlay');
-    if (dropzone) dropzone.classList.add('hidden');
-    loadPdfFromData(arrayBuffer);
+    const activeTab = TabManager.getActiveTab();
+    if (!activeTab || activeTab.isLoaded || activeTab.url) {
+      const tab = TabManager.createTab(file.name, file.name, arrayBuffer);
+      tab.arrayBuffer = arrayBuffer;
+      tab.title = file.name;
+      tab.url = file.name;
+      const dropzone = typeof document !== 'undefined' ? document.getElementById('dropzone-overlay') : null;
+      if (dropzone) dropzone.classList.add('hidden');
+      loadPdfFromData(arrayBuffer);
+    } else {
+      activeTab.title = file.name;
+      activeTab.url = file.name;
+      activeTab.arrayBuffer = arrayBuffer;
+      pdfUrl = file.name;
+      if (docTitle) docTitle.textContent = file.name;
+      document.title = file.name;
+      TabManager.renderTabBarUI();
+      const dropzone = typeof document !== 'undefined' ? document.getElementById('dropzone-overlay') : null;
+      if (dropzone) dropzone.classList.add('hidden');
+      loadPdfFromData(arrayBuffer);
+    }
   };
   reader.readAsArrayBuffer(file);
 }
+
+// =========================================================================
+// Feature R4: Text-to-Speech (TTS) Narration & Highlighting Controller
+// =========================================================================
+class TTSController {
+  constructor() {
+    this.synth = null;
+    this.voices = [];
+    this.selectedVoice = null;
+    this.rate = 1.0;
+    this.pitch = 1.0;
+    this.sentences = [];
+    this.currentIndex = 0;
+    this.isPlaying = false;
+    this.isPaused = false;
+    this.utterance = null;
+    this.isPanelOpen = false;
+    this._stoppedAtEnd = false;
+  }
+
+  getSynth() {
+    if (!this.synth) {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        this.synth = window.speechSynthesis;
+      } else if (typeof globalThis !== 'undefined' && globalThis.speechSynthesis) {
+        this.synth = globalThis.speechSynthesis;
+      } else if (typeof global !== 'undefined' && global.speechSynthesis) {
+        this.synth = global.speechSynthesis;
+      }
+    }
+    return this.synth;
+  }
+
+  init() {
+    if (typeof document === 'undefined') return;
+
+    this.populateVoices();
+    const synth = this.getSynth();
+    if (synth && typeof synth.onvoiceschanged !== 'undefined') {
+      synth.onvoiceschanged = () => this.populateVoices();
+    }
+
+    const btnToggle = document.getElementById('btn-toggle-tts');
+    const btnPlay = document.getElementById('tts-btn-play');
+    const btnStop = document.getElementById('tts-btn-stop');
+    const btnPrev = document.getElementById('tts-btn-prev');
+    const btnNext = document.getElementById('tts-btn-next');
+    const selectSpeed = document.getElementById('tts-select-speed');
+    const selectVoice = document.getElementById('tts-select-voice');
+
+    if (btnToggle) {
+      btnToggle.onclick = () => this.togglePanel();
+    }
+    if (btnPlay) {
+      btnPlay.onclick = () => {
+        if (this.isPlaying && !this.isPaused) {
+          this.pause();
+        } else if (this.isPaused) {
+          this.resume();
+        } else {
+          this.play();
+        }
+      };
+    }
+    if (btnStop) {
+      btnStop.onclick = () => this.stop();
+    }
+    if (btnPrev) {
+      btnPrev.onclick = () => this.prev();
+    }
+    if (btnNext) {
+      btnNext.onclick = () => this.next();
+    }
+    if (selectSpeed) {
+      selectSpeed.onchange = (e) => this.setRate(parseFloat(e.target.value));
+    }
+    if (selectVoice) {
+      selectVoice.onchange = (e) => this.setVoice(e.target.value);
+    }
+  }
+
+  togglePanel() {
+    if (typeof document === 'undefined') return;
+    const panel = document.getElementById('tts-panel');
+    if (!panel) return;
+
+    if (panel.classList.contains('hidden')) {
+      panel.classList.remove('hidden');
+      this.isPanelOpen = true;
+      if (this.sentences.length === 0) {
+        this.loadSentencesFromDOM();
+      }
+    } else {
+      panel.classList.add('hidden');
+      this.isPanelOpen = false;
+      this.stop();
+    }
+  }
+
+  populateVoices() {
+    const synth = this.getSynth();
+    if (!synth || typeof synth.getVoices !== 'function') return;
+
+    this.voices = synth.getVoices() || [];
+    if (typeof document === 'undefined') return;
+
+    const selectVoice = document.getElementById('tts-select-voice');
+    if (!selectVoice) return;
+
+    selectVoice.innerHTML = '<option value="">Default Voice</option>';
+    this.voices.forEach((voice) => {
+      const option = document.createElement('option');
+      const val = voice.voiceURI || voice.name;
+      option.value = val;
+      option.textContent = `${voice.name} (${voice.lang})${voice.default ? ' — Default' : ''}`;
+      selectVoice.appendChild(option);
+    });
+  }
+
+  extractSentencesFromDOM(container = document) {
+    if (!container || typeof container.querySelectorAll !== 'function') {
+      return [];
+    }
+
+    const spans = Array.from(container.querySelectorAll('.textLayer span'));
+    if (spans.length === 0) {
+      return [];
+    }
+
+    const sentences = [];
+    let currentText = '';
+    let currentSpans = [];
+
+    spans.forEach(span => {
+      const text = span.textContent || '';
+      if (!text.trim()) return;
+
+      const regex = /([^.!?\n]+[.!?\n]+|[^.!?\n]+$)/g;
+      let match;
+      let isFirstInSpan = true;
+
+      while ((match = regex.exec(text)) !== null) {
+        const chunk = match[0];
+        if (!chunk) continue;
+        if (!chunk.trim() && !currentText.trim()) continue;
+
+        if (!isFirstInSpan && currentText.trim()) {
+          sentences.push({
+            text: currentText.trim(),
+            spans: [...currentSpans]
+          });
+          currentText = '';
+          currentSpans = [];
+        }
+
+        if (currentText && !/[\s.!?\n]$/.test(currentText) && !/^\s/.test(chunk)) {
+          currentText += ' ';
+        }
+        currentText += chunk;
+        if (chunk.trim() && !currentSpans.includes(span)) {
+          currentSpans.push(span);
+        }
+
+        if (/[.!?\n]$/.test(chunk.trim())) {
+          sentences.push({
+            text: currentText.trim(),
+            spans: [...currentSpans]
+          });
+          currentText = '';
+          currentSpans = [];
+        }
+
+        isFirstInSpan = false;
+      }
+    });
+
+    if (currentText.trim()) {
+      sentences.push({
+        text: currentText.trim(),
+        spans: [...currentSpans]
+      });
+    }
+
+    return sentences;
+  }
+
+  extractSentencesFromText(text) {
+    if (!text || typeof text !== 'string') return [];
+    const parts = text.split(/(?<=[.!?\n])\s+/);
+    return parts
+      .map(p => p.trim())
+      .filter(p => p.length > 0)
+      .map(sentenceText => ({
+        text: sentenceText,
+        spans: []
+      }));
+  }
+
+  loadSentencesFromDOM(container = document) {
+    this.sentences = this.extractSentencesFromDOM(container);
+    this.currentIndex = 0;
+    this._stoppedAtEnd = false;
+    this.updateProgressUI();
+    return this.sentences;
+  }
+
+  loadSentencesFromText(text) {
+    this.sentences = this.extractSentencesFromText(text);
+    this.currentIndex = 0;
+    this._stoppedAtEnd = false;
+    this.updateProgressUI();
+    return this.sentences;
+  }
+
+  rebindSpans(container = document) {
+    if (this.sentences.length === 0) return;
+    const newSentences = this.extractSentencesFromDOM(container);
+    if (newSentences.length === 0) return;
+
+    for (let i = 0; i < this.sentences.length; i++) {
+      if (newSentences[i] && newSentences[i].text === this.sentences[i].text) {
+        this.sentences[i].spans = newSentences[i].spans;
+      } else {
+        const match = newSentences.find(s => s.text === this.sentences[i].text);
+        if (match) {
+          this.sentences[i].spans = match.spans;
+        } else if (newSentences[i]) {
+          this.sentences[i].spans = newSentences[i].spans;
+        }
+      }
+    }
+    if (this.isPlaying || this.isPaused || this.isPanelOpen) {
+      this.highlightCurrentSentence();
+    }
+  }
+
+  updateProgressUI() {
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+    const progressEl = document.getElementById('tts-progress');
+    if (progressEl) {
+      const total = this.sentences.length;
+      const current = total > 0 && (this.isPlaying || this.isPaused || this.currentIndex > 0) ? Math.min(this.currentIndex + 1, total) : 0;
+      progressEl.textContent = `${current} / ${total}`;
+    }
+
+    const btnPlay = document.getElementById('tts-btn-play');
+    if (btnPlay) {
+      btnPlay.textContent = (this.isPlaying && !this.isPaused) ? '⏸' : '▶';
+    }
+  }
+
+  highlightCurrentSentence() {
+    if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+      const existing = document.querySelectorAll('.tts-sentence-highlight');
+      if (existing && existing.forEach) {
+        existing.forEach(el => {
+          if (el && el.classList && typeof el.classList.remove === 'function') {
+            el.classList.remove('tts-sentence-highlight');
+          }
+        });
+      }
+    }
+
+    if (this.currentIndex < 0 || this.currentIndex >= this.sentences.length) {
+      return;
+    }
+
+    let currentSentence = this.sentences[this.currentIndex];
+    if (currentSentence && currentSentence.spans && currentSentence.spans.length > 0) {
+      const isDetached = currentSentence.spans.some(span => typeof document !== 'undefined' && document.body && typeof document.body.contains === 'function' && !document.body.contains(span));
+      if (isDetached) {
+        this.rebindSpans();
+        currentSentence = this.sentences[this.currentIndex];
+      }
+    }
+
+    if (currentSentence && currentSentence.spans && currentSentence.spans.length > 0) {
+      currentSentence.spans.forEach(span => {
+        if (span && span.classList && typeof span.classList.add === 'function') {
+          span.classList.add('tts-sentence-highlight');
+        }
+      });
+
+      const firstSpan = currentSentence.spans[0];
+      if (firstSpan && typeof firstSpan.scrollIntoView === 'function') {
+        firstSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }
+
+  play() {
+    this._stoppedAtEnd = false;
+    if (this.sentences.length === 0) {
+      this.loadSentencesFromDOM();
+    }
+
+    if (this.sentences.length === 0) return;
+
+    if (this.isPaused) {
+      this.resume();
+      return;
+    }
+
+    this.isPlaying = true;
+    this.isPaused = false;
+    this.speakCurrentSentence();
+  }
+
+  speakCurrentSentence() {
+    const synth = this.getSynth();
+    if (!synth) return;
+
+    if (this.currentIndex < 0 || this.currentIndex >= this.sentences.length) {
+      this.stop();
+      return;
+    }
+
+    synth.cancel();
+
+    this.highlightCurrentSentence();
+    this.updateProgressUI();
+
+    const sentence = this.sentences[this.currentIndex];
+    if (!sentence || !sentence.text) {
+      this.next();
+      return;
+    }
+
+    const UtteranceClass = (typeof window !== 'undefined' && window.SpeechSynthesisUtterance) ||
+                           (typeof globalThis !== 'undefined' && globalThis.SpeechSynthesisUtterance) ||
+                           (typeof global !== 'undefined' && global.SpeechSynthesisUtterance) || null;
+
+    if (!UtteranceClass) return;
+
+    const utt = new UtteranceClass(sentence.text);
+    utt.rate = this.rate;
+    utt.pitch = this.pitch;
+    if (this.selectedVoice) {
+      utt.voice = this.selectedVoice;
+    }
+
+    utt.onstart = () => {
+      this.isPlaying = true;
+      this.isPaused = false;
+      this.updateProgressUI();
+    };
+
+    utt.onend = () => {
+      if (this.isPlaying && !this.isPaused) {
+        if (this.currentIndex < this.sentences.length - 1) {
+          this.currentIndex++;
+          this.speakCurrentSentence();
+        } else {
+          this.stop();
+          this._stoppedAtEnd = true;
+        }
+      }
+    };
+
+    utt.onerror = () => {
+      this.stop();
+    };
+
+    this.utterance = utt;
+    synth.speak(utt);
+  }
+
+  pause() {
+    const synth = this.getSynth();
+    if (synth && (this.isPlaying || synth.speaking)) {
+      synth.pause();
+      this.isPaused = true;
+      this.isPlaying = false;
+      this.updateProgressUI();
+    }
+  }
+
+  resume() {
+    const synth = this.getSynth();
+    if (synth && this.isPaused) {
+      if (this.utterance) {
+        this.utterance.rate = this.rate;
+      }
+      synth.resume();
+      this.isPaused = false;
+      this.isPlaying = true;
+      this.updateProgressUI();
+    } else if (!this.isPlaying) {
+      this.play();
+    }
+  }
+
+  stop() {
+    const synth = this.getSynth();
+    if (synth) {
+      synth.cancel();
+    }
+    this.isPlaying = false;
+    this.isPaused = false;
+    this.currentIndex = 0;
+    this.utterance = null;
+    this._stoppedAtEnd = false;
+    if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+      const existing = document.querySelectorAll('.tts-sentence-highlight');
+      if (existing && existing.forEach) {
+        existing.forEach(el => {
+          if (el && el.classList && typeof el.classList.remove === 'function') {
+            el.classList.remove('tts-sentence-highlight');
+          }
+        });
+      }
+    }
+    this.updateProgressUI();
+  }
+
+  prev() {
+    if (this.sentences.length === 0) return;
+    this._stoppedAtEnd = false;
+    const wasPlaying = this.isPlaying;
+    this.currentIndex = Math.max(0, this.currentIndex - 1);
+    this.highlightCurrentSentence();
+    this.updateProgressUI();
+    if (wasPlaying) {
+      this.speakCurrentSentence();
+    }
+  }
+
+  next() {
+    if (this.sentences.length === 0) return;
+    if (this._stoppedAtEnd) {
+      this._stoppedAtEnd = false;
+      this.currentIndex = 0;
+      this.highlightCurrentSentence();
+      this.updateProgressUI();
+      return;
+    }
+    const wasPlaying = this.isPlaying;
+    if (this.currentIndex < this.sentences.length - 1) {
+      this.currentIndex++;
+      this.highlightCurrentSentence();
+      this.updateProgressUI();
+      if (wasPlaying) {
+        this.speakCurrentSentence();
+      }
+    } else {
+      this.stop();
+      this._stoppedAtEnd = true;
+    }
+  }
+
+  setRate(rate) {
+    this.rate = rate;
+    const selectSpeed = (typeof document !== 'undefined' && typeof document.getElementById === 'function') ? document.getElementById('tts-select-speed') : null;
+    if (selectSpeed && selectSpeed.value !== rate.toString()) {
+      selectSpeed.value = rate.toString();
+    }
+    if (this.utterance) {
+      this.utterance.rate = rate;
+    }
+    if (this.isPlaying && !this.isPaused) {
+      this.speakCurrentSentence();
+    }
+  }
+
+  setVoice(voiceURI) {
+    if (this.voices.length === 0) {
+      this.populateVoices();
+    }
+    const voice = this.voices.find(v => (v.voiceURI === voiceURI || v.name === voiceURI));
+    this.selectedVoice = voice || null;
+    const selectVoice = (typeof document !== 'undefined' && typeof document.getElementById === 'function') ? document.getElementById('tts-select-voice') : null;
+    if (selectVoice && selectVoice.value !== voiceURI) {
+      selectVoice.value = voiceURI;
+    }
+    if (this.isPlaying && !this.isPaused) {
+      this.speakCurrentSentence();
+    }
+  }
+}
+
+const ttsController = new TTSController();
 
 function setupFileOpenAndDragDropListeners() {
   if (typeof document === 'undefined') return;
@@ -2352,6 +3142,13 @@ function setupFileOpenAndDragDropListeners() {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    TabSession,
+    TabManager,
+    get pageObserver() { return pageObserver; },
+    setupIntersectionObserver,
+    renderPage,
+    createPagePlaceholders,
+    adjustZoom,
     clampNumber,
     sanitizeSettings,
     isProtectedElement,
@@ -2387,7 +3184,9 @@ if (typeof module !== 'undefined' && module.exports) {
     sanitizeFileUrl,
     loadPdf,
     setupEventListeners,
-    handleParameterlessStartup
+    handleParameterlessStartup,
+    TTSController,
+    ttsController
   };
 }
 

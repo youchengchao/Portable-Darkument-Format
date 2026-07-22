@@ -312,15 +312,151 @@ function createChromeMock() {
   return chromeMock;
 }
 
+class MockSpeechSynthesisUtterance {
+  constructor(text = '') {
+    this.text = text;
+    this.lang = 'en-US';
+    this.voice = null;
+    this.volume = 1.0;
+    this.rate = 1.0;
+    this.pitch = 1.0;
+    this.onstart = null;
+    this.onend = null;
+    this.onerror = null;
+    this.onpause = null;
+    this.onresume = null;
+    this.onboundary = null;
+  }
+}
+
+class MockSpeechSynthesis {
+  constructor() {
+    this.speaking = false;
+    this.paused = false;
+    this.pending = false;
+    this.onvoiceschanged = null;
+    this.queue = [];
+    this.currentUtterance = null;
+    this.autoFinish = false;
+    this._voices = [
+      { name: 'Alex', lang: 'en-US', voiceURI: 'Alex', default: true },
+      { name: 'Victoria', lang: 'en-US', voiceURI: 'Victoria', default: false },
+      { name: 'Google US English', lang: 'en-US', voiceURI: 'Google US English', default: false }
+    ];
+  }
+
+  getVoices() {
+    return this._voices;
+  }
+
+  speak(utterance) {
+    if (!utterance) return;
+    this.queue.push(utterance);
+    this.pending = this.queue.length > 1;
+
+    if (!this.speaking && !this.paused) {
+      this._processQueue();
+    }
+  }
+
+  _processQueue() {
+    if (this.queue.length === 0) {
+      this.speaking = false;
+      this.pending = false;
+      this.currentUtterance = null;
+      return;
+    }
+
+    const utt = this.queue.shift();
+    this.currentUtterance = utt;
+    this.speaking = true;
+    this.pending = this.queue.length > 0;
+
+    if (typeof utt.onstart === 'function') {
+      try { utt.onstart({ type: 'start', utterance: utt }); } catch (e) {}
+    }
+
+    if (typeof utt.onboundary === 'function') {
+      try { utt.onboundary({ type: 'boundary', name: 'word', charIndex: 0, utterance: utt }); } catch (e) {}
+    }
+
+    if (this.autoFinish) {
+      this.finishCurrentUtterance();
+    }
+  }
+
+  finishCurrentUtterance() {
+    if (!this.currentUtterance) return;
+    const utt = this.currentUtterance;
+    this.speaking = false;
+    this.currentUtterance = null;
+    if (typeof utt.onend === 'function') {
+      try { utt.onend({ type: 'end', utterance: utt }); } catch (e) {}
+    }
+    if (!this.paused && this.queue.length > 0) {
+      this._processQueue();
+    }
+  }
+
+  cancel() {
+    this.speaking = false;
+    this.paused = false;
+    this.pending = false;
+    this.queue = [];
+    this.currentUtterance = null;
+  }
+
+  pause() {
+    if (this.speaking && !this.paused) {
+      this.paused = true;
+      this.speaking = false;
+      if (this.currentUtterance && typeof this.currentUtterance.onpause === 'function') {
+        try { this.currentUtterance.onpause({ type: 'pause', utterance: this.currentUtterance }); } catch (e) {}
+      }
+    }
+  }
+
+  resume() {
+    if (this.paused) {
+      this.paused = false;
+      if (this.currentUtterance) {
+        this.speaking = true;
+        if (typeof this.currentUtterance.onresume === 'function') {
+          try { this.currentUtterance.onresume({ type: 'resume', utterance: this.currentUtterance }); } catch (e) {}
+        }
+      } else {
+        this._processQueue();
+      }
+    }
+  }
+}
+
 // Function to install chrome mock into global scope
 function setupGlobalChromeMock() {
   const mock = createChromeMock();
   global.chrome = mock;
   globalThis.chrome = mock;
+
+  const mockSynth = new MockSpeechSynthesis();
+  global.speechSynthesis = mockSynth;
+  global.SpeechSynthesisUtterance = MockSpeechSynthesisUtterance;
+
+  if (typeof globalThis !== 'undefined') {
+    globalThis.speechSynthesis = mockSynth;
+    globalThis.SpeechSynthesisUtterance = MockSpeechSynthesisUtterance;
+  }
+  if (typeof window !== 'undefined') {
+    window.speechSynthesis = mockSynth;
+    window.SpeechSynthesisUtterance = MockSpeechSynthesisUtterance;
+  }
+
   return mock;
 }
 
 module.exports = {
   createChromeMock,
-  setupGlobalChromeMock
+  setupGlobalChromeMock,
+  MockSpeechSynthesisUtterance,
+  MockSpeechSynthesis
 };
+

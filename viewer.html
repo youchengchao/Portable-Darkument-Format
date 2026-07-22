@@ -115,6 +115,13 @@
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
         </button>
+        <!-- Text-to-Speech (TTS) Narration Panel Toggle -->
+        <button id="btn-toggle-tts" class="btn" title="Toggle Text-to-Speech Narration">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.08"></path>
+          </svg>
+        </button>
         <!-- Theme indicator -->
         <span id="theme-badge" class="theme-badge">Dark</span>
         <!-- Supporter indicator -->
@@ -128,6 +135,35 @@
         </button>
       </div>
     </header>
+
+    <!-- Multi-Tab PDF Workspace Bar -->
+    <div id="tab-bar" class="tab-bar">
+      <div id="tab-list" class="tab-list"></div>
+      <button id="btn-add-tab" class="tab-add-btn" title="Open New Document Tab">+</button>
+    </div>
+
+    <!-- TTS Narration Control Bar (Initially hidden) -->
+    <div id="tts-panel" class="tts-panel hidden">
+      <div class="tts-controls">
+        <button id="tts-btn-play" class="btn-tts" title="Play / Pause Narration">▶</button>
+        <button id="tts-btn-stop" class="btn-tts" title="Stop Narration">⏹</button>
+        <button id="tts-btn-prev" class="btn-tts" title="Previous Sentence">⏮</button>
+        <button id="tts-btn-next" class="btn-tts" title="Next Sentence">⏭</button>
+        <div class="tts-divider"></div>
+        <select id="tts-select-speed" class="tts-select" title="Speech Speed">
+          <option value="0.75">0.75x</option>
+          <option value="1.0" selected>1.0x</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2.0">2.0x</option>
+        </select>
+        <select id="tts-select-voice" class="tts-select" title="Select Voice">
+          <option value="">Default Voice</option>
+        </select>
+        <div class="tts-divider"></div>
+        <span id="tts-progress" class="tts-progress">0 / 0</span>
+      </div>
+    </div>
 
     <!-- Annotation Sub-Toolbar (Initially hidden) -->
     <div id="annotation-bar" class="annotation-bar hidden">
@@ -273,6 +309,8 @@
         <input type="text" id="popover-note-input" placeholder="Add optional note..." />
         <button id="popover-btn-add" class="popover-save-btn">Save</button>
       </div>
+    </div>
+
     <!-- Floating Reading Ruler Guide Line -->
     <div id="reading-ruler" class="reading-ruler hidden"></div>
 
@@ -290,6 +328,7 @@
         <a href="https://buymeacoffee.com" target="_blank" class="toast-btn toast-btn-primary">Buy Me a Coffee ☕</a>
         <a href="https://github.com/sponsors" target="_blank" class="toast-btn toast-btn-secondary">GitHub Sponsors 💖</a>
       </div>
+    </div>
     <!-- Native In-Viewer Settings Modal -->
     <div id="settings-modal" class="settings-modal hidden">
       <div class="settings-modal-backdrop" id="settings-modal-backdrop"></div>

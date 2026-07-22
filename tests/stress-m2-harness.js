@@ -1,334 +1,494 @@
 /**
- * Milestone 2 Stress Test Harness
- * Empirically stress-tests:
- * 1. file:/// URL detection (background.js & content.js)
- * 2. Chunked Base64 encoding/decoding stack limits and byte fidelity (content.js & viewer.js)
- * 3. Storage quota handling & cleanup (manifest.json & chrome.storage.local)
- * 4. read_file_bytes message handling (background.js)
+ * S-TIER EMPIRICAL STRESS TEST HARNESS FOR MILESTONE 2 (R2 HEATMAP)
+ * 
+ * Stress Vectors Tested:
+ * 1. Empty `dailyStats` object or `analytics` undefined
+ * 2. Sparse reading data (scattered single-day entries)
+ * 3. High volume reading data (large minute/page counts)
+ * 4. Rapid supporter status toggling (gold accent vs default violet theme)
+ * 5. Verification of standard test suite execution
  */
 
 const assert = require('assert');
-const fs = require('fs');
 const path = require('path');
-const { setupGlobalChromeMock } = require('./mocks/chrome-api-mock');
+const { execSync } = require('child_process');
 
-// Setup Chrome global mock FIRST before loading background/content scripts
-const chromeMock = setupGlobalChromeMock();
+const popup = require('../popup.js');
+const { renderReadingHeatmap, renderPopupStats, calculateActiveStreak } = popup;
 
-const contentScript = require('../content');
-const background = require('../background');
+// Helper: Setup DOM mock environment for Heatmap testing
+function setupMockHeatmapDOM() {
+  const children = [];
+  const cardClassList = new Set();
+  const wrapperClassList = new Set();
+  const gridClassList = new Set();
 
-let totalPasses = 0;
-let totalFails = 0;
-
-function runTest(description, testFn) {
-  try {
-    testFn();
-    console.log(`  ✅ [PASS] ${description}`);
-    totalPasses++;
-  } catch (err) {
-    console.error(`  ❌ [FAIL] ${description}`);
-    console.error(err);
-    totalFails++;
-  }
-}
-
-async function runAsyncTest(description, testFn) {
-  try {
-    await testFn();
-    console.log(`  ✅ [PASS] ${description}`);
-    totalPasses++;
-  } catch (err) {
-    console.error(`  ❌ [FAIL] ${description}`);
-    console.error(err);
-    totalFails++;
-  }
-}
-
-async function main() {
-  console.log('=================================================================');
-  console.log('       MILESTONE 2 EMPIRICAL STRESS TEST HARNESS                ');
-  console.log('=================================================================\n');
-
-  // -----------------------------------------------------------------------------
-  // SECTION 1: file:/// URL Detection & Processing
-  // -----------------------------------------------------------------------------
-  console.log('--- Section 1: file:/// URL Detection & Processing ---');
-
-  runTest('1.1 Standard file:/// PDF URLs detected as PDF in background.js', () => {
-    assert.strictEqual(background.isPdfUrl('file:///C:/Users/test/document.pdf'), true);
-    assert.strictEqual(background.isPdfUrl('file:///D:/Books/manual.PDF'), true);
-    assert.strictEqual(background.isPdfUrl('file:///tmp/file.pdf'), true);
-  });
-
-  runTest('1.2 file:/// URLs with search params and hash fragments', () => {
-    assert.strictEqual(background.isPdfUrl('file:///C:/doc.pdf?zoom=100#page=5'), true);
-    assert.strictEqual(background.isPdfUrl('file:///C:/doc.pdf?pdf=true'), true);
-    assert.strictEqual(background.isPdfUrl('file:///C:/path/file.pdf?native=true'), false);
-    assert.strictEqual(background.isPdfUrl('file:///C:/path/file.pdf#native=true'), false);
-  });
-
-  runTest('1.3 Complex and encoded file:/// paths', () => {
-    assert.strictEqual(background.isPdfUrl('file:///C:/My%20Documents/Report%20(2026).pdf'), true);
-    assert.strictEqual(background.isPdfUrl('file:///C:/%D0%B4%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82.pdf'), true);
-  });
-
-  runTest('1.4 Non-PDF and invalid file:/// URLs', () => {
-    assert.strictEqual(background.isPdfUrl('file:///C:/image.png'), false);
-    assert.strictEqual(background.isPdfUrl('file:///C:/document.txt'), false);
-    assert.strictEqual(background.isPdfUrl('file:///C:/pdf'), false);
-    assert.strictEqual(background.isPdfUrl('file:///C:/viewer.html'), false);
-    assert.strictEqual(background.isPdfUrl('file:///'), false);
-    assert.strictEqual(background.isPdfUrl(''), false);
-    assert.strictEqual(background.isPdfUrl(null), false);
-    assert.strictEqual(background.isPdfUrl(undefined), false);
-    assert.strictEqual(background.isPdfUrl(12345), false);
-  });
-
-  await runAsyncTest('1.5 content.js handleLocalPdf mode behavior and idempotency flag', async () => {
-    const origWin = global.window;
-    const origFetch = global.fetch;
-
-    global.window = {
-      location: { href: 'file:///C:/test/file.pdf', search: '', hash: '' },
-      __pdfDarkProcessingLocal: false
-    };
-
-    let fetchCalled = false;
-    global.fetch = () => {
-      fetchCalled = true;
-      return Promise.resolve({
-        arrayBuffer: () => Promise.resolve(new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer)
-      });
-    };
-
-    try {
-      // Mode classic -> return false
-      assert.strictEqual(contentScript.handleLocalPdf({ active: true, mode: 'classic' }), false);
-
-      // Active false -> return false
-      assert.strictEqual(contentScript.handleLocalPdf({ active: false, mode: 'enhanced' }), false);
-
-      // Mode enhanced -> return true and set flag
-      assert.strictEqual(contentScript.handleLocalPdf({ active: true, mode: 'enhanced' }), true);
-      assert.strictEqual(global.window.__pdfDarkProcessingLocal, true);
-
-      // Subsequent call returns true due to idempotency flag
-      assert.strictEqual(contentScript.handleLocalPdf({ active: true, mode: 'enhanced' }), true);
-
-      await new Promise(r => setTimeout(r, 20));
-      assert.strictEqual(fetchCalled, true);
-    } finally {
-      global.window = origWin;
-      global.fetch = origFetch;
+  const cardEl = {
+    classList: {
+      add: (c) => cardClassList.add(c),
+      remove: (c) => cardClassList.delete(c),
+      contains: (c) => cardClassList.has(c),
+      toggle: (c, val) => val ? cardClassList.add(c) : cardClassList.delete(c)
     }
-  });
+  };
 
+  const wrapperEl = {
+    id: 'reading-heatmap-wrapper',
+    scrollLeft: 0,
+    scrollWidth: 800,
+    classList: {
+      add: (c) => wrapperClassList.add(c),
+      remove: (c) => wrapperClassList.delete(c),
+      contains: (c) => wrapperClassList.has(c),
+      toggle: (c, val) => val ? wrapperClassList.add(c) : wrapperClassList.delete(c)
+    }
+  };
 
-  // -----------------------------------------------------------------------------
-  // SECTION 2: Chunked Base64 Encoding & Decoding Stress Test
-  // -----------------------------------------------------------------------------
-  console.log('\n--- Section 2: Chunked Base64 Encoding & Decoding Stress Test ---');
+  const gridEl = {
+    id: 'reading-heatmap-grid',
+    innerHTML: '',
+    children: children,
+    classList: {
+      add: (c) => gridClassList.add(c),
+      remove: (c) => gridClassList.delete(c),
+      contains: (c) => gridClassList.has(c),
+      toggle: (c, val) => val ? gridClassList.add(c) : gridClassList.delete(c)
+    },
+    appendChild: (child) => { children.push(child); },
+    closest: (selector) => (selector === '.heatmap-card' ? cardEl : null)
+  };
 
-  runTest('2.1 Small (100 B) ArrayBuffer chunked Base64 encoding', () => {
-    const buf = new Uint8Array(100).map((_, i) => i % 256).buffer;
-    const b64 = contentScript.arrayBufferToBase64(buf);
-    assert.ok(typeof b64 === 'string' && b64.length > 0);
-  });
+  const totalDaysEl = {
+    id: 'heatmap-total-days',
+    textContent: ''
+  };
 
-  runTest('2.2 Chunk boundary tests (32767, 32768, 32769, 65536 bytes)', () => {
-    const sizes = [32767, 32768, 32769, 65536];
-    for (const sz of sizes) {
-      const arr = new Uint8Array(sz);
-      for (let i = 0; i < sz; i++) arr[i] = i % 256;
-      const b64 = contentScript.arrayBufferToBase64(arr.buffer);
-      
-      // Decode and verify exact matching
-      const binStr = atob(b64);
-      assert.strictEqual(binStr.length, sz);
-      for (let i = 0; i < sz; i++) {
-        if (binStr.charCodeAt(i) !== (i % 256)) {
-          throw new Error(`Mismatch at index ${i} for size ${sz}`);
+  const streakBadgeEl = { id: 'top-streak-badge', textContent: '' };
+  const streakValEl = { id: 'popup-streak-val', textContent: '' };
+  const timeValEl = { id: 'popup-time-val', textContent: '' };
+  const pagesValEl = { id: 'popup-pages-val', textContent: '' };
+
+  const mockDoc = {
+    getElementById: (id) => {
+      if (id === 'reading-heatmap-grid') return gridEl;
+      if (id === 'heatmap-total-days') return totalDaysEl;
+      if (id === 'reading-heatmap-wrapper') return wrapperEl;
+      if (id === 'top-streak-badge') return streakBadgeEl;
+      if (id === 'popup-streak-val') return streakValEl;
+      if (id === 'popup-time-val') return timeValEl;
+      if (id === 'popup-pages-val') return pagesValEl;
+      return null;
+    },
+    createElement: (tag) => {
+      const elClassList = new Set();
+      const dataset = {};
+      const attributes = {};
+      return {
+        tagName: tag.toUpperCase(),
+        className: '',
+        title: '',
+        dataset: dataset,
+        setAttribute: (k, v) => { attributes[k] = v; },
+        getAttribute: (k) => attributes[k],
+        classList: {
+          add: (c) => elClassList.add(c),
+          remove: (c) => elClassList.delete(c),
+          contains: (c) => elClassList.has(c)
+        }
+      };
+    }
+  };
+
+  return { mockDoc, gridEl, totalDaysEl, wrapperEl, cardEl, children, cardClassList, wrapperClassList, gridClassList };
+}
+
+// Helper: Setup mock Chrome Storage API
+function setupMockChromeStorage(storageData = {}) {
+  global.chrome = {
+    storage: {
+      local: {
+        get: (keys, callback) => {
+          const result = {};
+          if (Array.isArray(keys)) {
+            keys.forEach(k => { result[k] = storageData[k]; });
+          } else if (typeof keys === 'string') {
+            result[keys] = storageData[keys];
+          } else {
+            Object.assign(result, storageData);
+          }
+          callback(result);
         }
       }
     }
-  });
+  };
+}
 
-  runTest('2.3 Large ArrayBuffer stress test (5 MB ArrayBuffer)', () => {
-    const size = 5 * 1024 * 1024; // 5 MB
-    const arr = new Uint8Array(size);
-    for (let i = 0; i < size; i += 1000) {
-      arr[i] = (i / 1000) % 256;
-    }
-    const t0 = Date.now();
-    const b64 = contentScript.arrayBufferToBase64(arr.buffer);
-    const elapsed = Date.now() - t0;
-    
-    assert.ok(b64.length >= (size * 4 / 3));
-    console.log(`    (5 MB encoding took ${elapsed} ms, base64 length: ${b64.length} chars)`);
-  });
+let passedCount = 0;
+let totalCount = 0;
 
-  runTest('2.4 Giant ArrayBuffer stress test (15 MB ArrayBuffer)', () => {
-    const size = 15 * 1024 * 1024; // 15 MB
-    const arr = new Uint8Array(size);
-    arr[0] = 0x25; arr[1] = 0x50; arr[2] = 0x44; arr[3] = 0x46; // %PDF
-    arr[size - 1] = 0xFF;
-
-    const t0 = Date.now();
-    const b64 = contentScript.arrayBufferToBase64(arr.buffer);
-    const elapsed = Date.now() - t0;
-
-    assert.ok(b64.length > size);
-
-    // Decode check first and last byte
-    const decodedStr = atob(b64);
-    assert.strictEqual(decodedStr.charCodeAt(0), 0x25);
-    assert.strictEqual(decodedStr.charCodeAt(size - 1), 0xFF);
-    console.log(`    (15 MB encoding took ${elapsed} ms, base64 length: ${b64.length} chars)`);
-  });
-
-  runTest('2.5 Full 0x00-0xFF byte spectrum data fidelity check', () => {
-    const spectrum = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) spectrum[i] = i;
-    const b64 = contentScript.arrayBufferToBase64(spectrum.buffer);
-    const decodedBinStr = atob(b64);
-    assert.strictEqual(decodedBinStr.length, 256);
-    for (let i = 0; i < 256; i++) {
-      assert.strictEqual(decodedBinStr.charCodeAt(i), i);
-    }
-  });
-
-  runTest('2.6 Empty, null, and undefined buffer edge cases', () => {
-    assert.strictEqual(contentScript.arrayBufferToBase64(null), '');
-    assert.strictEqual(contentScript.arrayBufferToBase64(undefined), '');
-    assert.strictEqual(contentScript.arrayBufferToBase64(new ArrayBuffer(0)), '');
-  });
-
-
-  // -----------------------------------------------------------------------------
-  // SECTION 3: Storage Quota & Manifest Verification
-  // -----------------------------------------------------------------------------
-  console.log('\n--- Section 3: Storage Quota & Manifest Verification ---');
-
-  runTest('3.1 manifest.json permissions include "unlimitedStorage" and "file:///*"', () => {
-    const manifestPath = path.join(__dirname, '../manifest.json');
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-
-    assert.ok(manifest.permissions.includes('unlimitedStorage'), 'permissions must contain unlimitedStorage');
-    assert.ok(manifest.host_permissions.includes('file:///*'), 'host_permissions must contain file:///*');
-    assert.ok(manifest.content_scripts[0].matches.includes('file:///*'), 'content_scripts matches must contain file:///*');
-    assert.ok(manifest.web_accessible_resources[0].matches.includes('file:///*'), 'web_accessible_resources matches must contain file:///*');
-  });
-
-  await runAsyncTest('3.2 Large payload storage set and removal cycle', async () => {
-    const largeData = 'A'.repeat(6 * 1024 * 1024); // 6 MB Base64 string
-    const pendingPayload = {
-      name: 'large_document.pdf',
-      data: largeData,
-      url: 'file:///C:/large_document.pdf'
-    };
-
-    await chrome.storage.local.set({ pendingLocalPdf: pendingPayload });
-
-    const fetched = await new Promise(r => chrome.storage.local.get('pendingLocalPdf', r));
-    assert.strictEqual(fetched.pendingLocalPdf.name, 'large_document.pdf');
-    assert.strictEqual(fetched.pendingLocalPdf.data.length, 6 * 1024 * 1024);
-
-    // Simulate viewer.js cleanup
-    await chrome.storage.local.remove('pendingLocalPdf');
-
-    const afterCleanup = await new Promise(r => chrome.storage.local.get('pendingLocalPdf', r));
-    assert.strictEqual(afterCleanup.pendingLocalPdf, undefined);
-  });
-
-
-  // -----------------------------------------------------------------------------
-  // SECTION 4: read_file_bytes Message Handler Stress Test
-  // -----------------------------------------------------------------------------
-  console.log('\n--- Section 4: read_file_bytes Message Handler Stress Test ---');
-
-  await runAsyncTest('4.1 read_file_bytes returns pendingLocalPdf data when available', async () => {
-    const testData = { name: 'sample.pdf', data: 'SGVsbG8gV29ybGQ=', url: 'file:///C:/sample.pdf' };
-    await chrome.storage.local.set({ pendingLocalPdf: testData });
-
-    const response = await new Promise((resolve) => {
-      background.handleReadFileBytes({ action: 'read_file_bytes', url: 'file:///C:/sample.pdf' }, {}, resolve);
-    });
-
-    assert.strictEqual(response.success, true);
-    assert.strictEqual(response.data, 'SGVsbG8gV29ybGQ=');
-  });
-
-  await runAsyncTest('4.2 read_file_bytes matches when url argument is omitted in message', async () => {
-    const testData = { name: 'sample.pdf', data: 'SGVsbG8gV29ybGQ=', url: 'file:///C:/sample.pdf' };
-    await chrome.storage.local.set({ pendingLocalPdf: testData });
-
-    const response = await new Promise((resolve) => {
-      background.handleReadFileBytes({ action: 'read_file_bytes' }, {}, resolve);
-    });
-
-    assert.strictEqual(response.success, true);
-    assert.strictEqual(response.data, 'SGVsbG8gV29ybGQ=');
-  });
-
-  await runAsyncTest('4.3 read_file_bytes handles script execution fallback when pendingLocalPdf is absent', async () => {
-    await chrome.storage.local.remove('pendingLocalPdf');
-
-    const mockSender = { tab: { id: 42 } };
-    
-    // Set up chrome.scripting.executeScript mock
-    chrome.scripting = {
-      executeScript: (options, callback) => {
-        assert.strictEqual(options.target.tabId, 42);
-        callback([{ result: 'RlZCY0FBQUE=' }]);
-      }
-    };
-
-    const response = await new Promise((resolve) => {
-      background.handleReadFileBytes({ action: 'read_file_bytes', url: 'file:///C:/other.pdf' }, mockSender, resolve);
-    });
-
-    assert.strictEqual(response.success, true);
-    assert.strictEqual(response.data, 'RlZCY0FBQUE=');
-  });
-
-  await runAsyncTest('4.4 read_file_bytes error handling on null/missing storage & missing tabId', async () => {
-    await chrome.storage.local.remove('pendingLocalPdf');
-    delete chrome.scripting;
-
-    const response = await new Promise((resolve) => {
-      background.handleReadFileBytes({ action: 'read_file_bytes' }, {}, resolve);
-    });
-
-    assert.strictEqual(response.success, false);
-    assert.strictEqual(response.error, 'File data unavailable');
-  });
-
-  await runAsyncTest('4.5 read_file_bytes null/undefined message and sender tolerance', async () => {
-    const response = await new Promise((resolve) => {
-      background.handleReadFileBytes(null, null, resolve);
-    });
-
-    assert.strictEqual(response.success, false);
-    assert.strictEqual(response.error, 'File data unavailable');
-  });
-
-
-  // -----------------------------------------------------------------------------
-  // SUMMARY
-  // -----------------------------------------------------------------------------
-  console.log('\n=================================================================');
-  console.log(`STRESS TEST SUMMARY: ${totalPasses} Passed, ${totalFails} Failed`);
-  console.log('=================================================================\n');
-
-  if (totalFails > 0) {
-    process.exit(1);
-  } else {
-    process.exit(0);
+function runTest(name, fn) {
+  totalCount++;
+  try {
+    fn();
+    passedCount++;
+    console.log(`  [PASS] ${name}`);
+  } catch (err) {
+    console.error(`  [FAIL] ${name}`);
+    console.error(`         ${err.stack || err.message}`);
   }
 }
 
-main().catch(err => {
-  console.error('Fatal error running stress harness:', err);
-  process.exit(1);
+console.log('=================================================================');
+console.log('       EMPIRICAL STRESS TEST HARNESS: R2 HEATMAP FEATURE        ');
+console.log('=================================================================\n');
+
+// -----------------------------------------------------------------------------
+// VECTOR 1: Empty dailyStats object or analytics undefined
+// -----------------------------------------------------------------------------
+console.log('--- VECTOR 1: Empty dailyStats or analytics undefined ---');
+
+runTest('1.1 Empty dailyStats object renders 365 level-0 cells & 0 active days', () => {
+  const origDoc = global.document;
+  const { mockDoc, children, totalDaysEl } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  try {
+    renderReadingHeatmap({}, false, false);
+    assert.strictEqual(children.length, 365, 'Should render exactly 365 cells');
+    assert.strictEqual(totalDaysEl.textContent, '0 active days in past year');
+    const nonZeroLevel = children.filter(c => c.className !== 'heatmap-cell level-0');
+    assert.strictEqual(nonZeroLevel.length, 0, 'All cells should be level-0');
+  } finally {
+    global.document = origDoc;
+  }
 });
+
+runTest('1.2 null dailyStats parameter handles gracefully without throwing', () => {
+  const origDoc = global.document;
+  const { mockDoc, children } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  try {
+    assert.doesNotThrow(() => renderReadingHeatmap(null, false, false));
+    assert.strictEqual(children.length, 365, 'Should render 365 cells for null input');
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+runTest('1.3 undefined dailyStats parameter handles gracefully without throwing', () => {
+  const origDoc = global.document;
+  const { mockDoc, children } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  try {
+    assert.doesNotThrow(() => renderReadingHeatmap(undefined, false, false));
+    assert.strictEqual(children.length, 365, 'Should render 365 cells for undefined input');
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+runTest('1.4 Malformed dailyStats entries (null, {}, string) do not throw errors', () => {
+  const origDoc = global.document;
+  const { mockDoc, children } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  const now = new Date();
+  const todayISO = now.toISOString().split('T')[0];
+  const malformedStats = {
+    [todayISO]: null,
+    '2026-01-01': {},
+    '2026-01-02': 'invalid string',
+    '2026-01-03': { seconds: null, pages: undefined },
+    '2026-01-04': { seconds: -500, pages: -10 }
+  };
+  try {
+    assert.doesNotThrow(() => renderReadingHeatmap(malformedStats, false, false));
+    assert.strictEqual(children.length, 365);
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+runTest('1.5 renderPopupStats with undefined analytics and supporter in storage', () => {
+  const origDoc = global.document;
+  const origChrome = global.chrome;
+  const { mockDoc, children } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  setupMockChromeStorage({ analytics: undefined, supporter: undefined });
+  try {
+    assert.doesNotThrow(() => renderPopupStats());
+    assert.strictEqual(children.length, 365);
+  } finally {
+    global.document = origDoc;
+    global.chrome = origChrome;
+  }
+});
+
+
+// -----------------------------------------------------------------------------
+// VECTOR 2: Sparse reading data (scattered single-day entries)
+// -----------------------------------------------------------------------------
+console.log('\n--- VECTOR 2: Sparse reading data ---');
+
+runTest('2.1 Single entry 364 days ago (earliest boundary of 365-day window)', () => {
+  const origDoc = global.document;
+  const { mockDoc, children, totalDaysEl } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  const d = new Date();
+  d.setDate(d.getDate() - 364);
+  const oldestDateISO = d.toISOString().split('T')[0];
+
+  const sparseStats = {
+    [oldestDateISO]: { seconds: 1800, pages: 12 } // 30 mins -> level 3
+  };
+
+  try {
+    renderReadingHeatmap(sparseStats, false, false);
+    assert.strictEqual(totalDaysEl.textContent, '1 active day in past year');
+    const cell = children.find(c => c.dataset.date === oldestDateISO);
+    assert.ok(cell, 'Oldest date cell should exist');
+    assert.strictEqual(cell.className, 'heatmap-cell level-3');
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+runTest('2.2 Single entry today (latest boundary of 365-day window)', () => {
+  const origDoc = global.document;
+  const { mockDoc, children, totalDaysEl } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  const todayISO = new Date().toISOString().split('T')[0];
+
+  const sparseStats = {
+    [todayISO]: { seconds: 3600, pages: 50 } // 60 mins -> level 4
+  };
+
+  try {
+    renderReadingHeatmap(sparseStats, false, false);
+    assert.strictEqual(totalDaysEl.textContent, '1 active day in past year');
+    const todayCell = children[children.length - 1];
+    assert.strictEqual(todayCell.dataset.date, todayISO);
+    assert.strictEqual(todayCell.className, 'heatmap-cell level-4');
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+runTest('2.3 Out-of-window entries (older than 365 days or future dates) do not corrupt grid', () => {
+  const origDoc = global.document;
+  const { mockDoc, children, totalDaysEl } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  
+  const dOld = new Date();
+  dOld.setDate(dOld.getDate() - 500);
+  const oldISO = dOld.toISOString().split('T')[0];
+
+  const dFuture = new Date();
+  dFuture.setDate(dFuture.getDate() + 30);
+  const futureISO = dFuture.toISOString().split('T')[0];
+
+  const stats = {
+    [oldISO]: { seconds: 7200, pages: 100 },
+    [futureISO]: { seconds: 7200, pages: 100 }
+  };
+
+  try {
+    renderReadingHeatmap(stats, false, false);
+    assert.strictEqual(children.length, 365);
+    assert.strictEqual(totalDaysEl.textContent, '0 active days in past year');
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+runTest('2.4 Rounding threshold: 29s (0 mins) vs 30s (1 min -> level 1)', () => {
+  const origDoc = global.document;
+  const { mockDoc, children, totalDaysEl } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  
+  const d1 = new Date();
+  d1.setDate(d1.getDate() - 1);
+  const date29s = d1.toISOString().split('T')[0];
+
+  const d2 = new Date();
+  d2.setDate(d2.getDate() - 2);
+  const date30s = d2.toISOString().split('T')[0];
+
+  const stats = {
+    [date29s]: { seconds: 29, pages: 1 }, // Math.round(29/60) = 0 mins -> level 0
+    [date30s]: { seconds: 30, pages: 1 }  // Math.round(30/60) = 1 min -> level 1
+  };
+
+  try {
+    renderReadingHeatmap(stats, false, false);
+    const cell29 = children.find(c => c.dataset.date === date29s);
+    const cell30 = children.find(c => c.dataset.date === date30s);
+
+    assert.strictEqual(cell29.className, 'heatmap-cell level-0');
+    assert.strictEqual(cell30.className, 'heatmap-cell level-1');
+    assert.strictEqual(totalDaysEl.textContent, '1 active day in past year');
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+runTest('2.5 Fallback to pagesRead property when pages is missing', () => {
+  const origDoc = global.document;
+  const { mockDoc, children } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  const todayISO = new Date().toISOString().split('T')[0];
+
+  const stats = {
+    [todayISO]: { seconds: 600, pagesRead: 15 }
+  };
+
+  try {
+    renderReadingHeatmap(stats, false, false);
+    const cell = children[children.length - 1];
+    assert.strictEqual(cell.dataset.pages, 15);
+    assert.ok(cell.title.includes('15 pages'));
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+
+// -----------------------------------------------------------------------------
+// VECTOR 3: High volume reading data (large minute/page counts)
+// -----------------------------------------------------------------------------
+console.log('\n--- VECTOR 3: High volume reading data ---');
+
+runTest('3.1 All 365 days populated with high activity (86400s / 10000 pages)', () => {
+  const origDoc = global.document;
+  const { mockDoc, children, totalDaysEl } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+
+  const now = new Date();
+  const denseStats = {};
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const iso = d.toISOString().split('T')[0];
+    denseStats[iso] = { seconds: 86400, pages: 10000 };
+  }
+
+  try {
+    renderReadingHeatmap(denseStats, false, false);
+    assert.strictEqual(children.length, 365);
+    assert.strictEqual(totalDaysEl.textContent, '365 active days in past year');
+    const level4Cells = children.filter(c => c.className === 'heatmap-cell level-4');
+    assert.strictEqual(level4Cells.length, 365, 'All cells should be level-4');
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+runTest('3.2 Extreme value handling (1 billion seconds, 1 million pages)', () => {
+  const origDoc = global.document;
+  const { mockDoc, children } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+  const todayISO = new Date().toISOString().split('T')[0];
+
+  const extremeStats = {
+    [todayISO]: { seconds: 1e9, pages: 1e6 }
+  };
+
+  try {
+    renderReadingHeatmap(extremeStats, false, false);
+    const cell = children[children.length - 1];
+    assert.strictEqual(cell.className, 'heatmap-cell level-4');
+    assert.strictEqual(cell.dataset.mins, 16666667);
+    assert.strictEqual(cell.dataset.pages, 1000000);
+    assert.ok(cell.title.includes('16666667 mins, 1000000 pages'));
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+runTest('3.3 Heatmap performance benchmark (100 rapid re-renders of dense 365-day dataset)', () => {
+  const origDoc = global.document;
+  const { mockDoc } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+
+  const now = new Date();
+  const denseStats = {};
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    denseStats[d.toISOString().split('T')[0]] = { seconds: 3600, pages: 40 };
+  }
+
+  const startTime = Date.now();
+  try {
+    for (let iteration = 0; iteration < 100; iteration++) {
+      renderReadingHeatmap(denseStats, iteration % 2 === 0, iteration % 3 === 0);
+    }
+    const durationMs = Date.now() - startTime;
+    console.log(`         [PERF] 100 full-year renders executed in ${durationMs}ms`);
+    assert.ok(durationMs < 1000, `Performance budget exceeded: ${durationMs}ms > 1000ms`);
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+
+// -----------------------------------------------------------------------------
+// VECTOR 4: Rapid supporter status toggling
+// -----------------------------------------------------------------------------
+console.log('\n--- VECTOR 4: Rapid supporter status toggling ---');
+
+runTest('4.1 Rapid toggling (1,000 cycles) of isSupporter and goldAccent flags', () => {
+  const origDoc = global.document;
+  const { mockDoc, cardClassList, wrapperClassList, gridClassList } = setupMockHeatmapDOM();
+  global.document = mockDoc;
+
+  try {
+    for (let i = 0; i < 1000; i++) {
+      const isSupporter = (i % 2 === 1);
+      const goldAccent = (i % 4 >= 2);
+      renderReadingHeatmap({}, isSupporter, goldAccent);
+
+      const expectGold = isSupporter || goldAccent;
+      assert.strictEqual(cardClassList.has('supporter-heatmap'), expectGold);
+      assert.strictEqual(cardClassList.has('theme-gold-accent'), expectGold);
+      assert.strictEqual(wrapperClassList.has('supporter-heatmap'), expectGold);
+      assert.strictEqual(wrapperClassList.has('theme-gold-accent'), expectGold);
+      assert.strictEqual(gridClassList.has('supporter-heatmap'), expectGold);
+      assert.strictEqual(gridClassList.has('theme-gold-accent'), expectGold);
+    }
+
+    // Final clean state check (false, false)
+    renderReadingHeatmap({}, false, false);
+    assert.strictEqual(cardClassList.has('supporter-heatmap'), false);
+    assert.strictEqual(cardClassList.has('theme-gold-accent'), false);
+    assert.strictEqual(wrapperClassList.has('supporter-heatmap'), false);
+    assert.strictEqual(wrapperClassList.has('theme-gold-accent'), false);
+    assert.strictEqual(gridClassList.has('supporter-heatmap'), false);
+    assert.strictEqual(gridClassList.has('theme-gold-accent'), false);
+  } finally {
+    global.document = origDoc;
+  }
+});
+
+
+// -----------------------------------------------------------------------------
+// VECTOR 5: Verification of standard test suite execution
+// -----------------------------------------------------------------------------
+console.log('\n--- VECTOR 5: Test suite execution verification ---');
+
+runTest('5.1 Executing node tests/run-tests.js via child process', () => {
+  const testRunnerPath = path.join(__dirname, 'run-tests.js');
+  const output = execSync(`node "${testRunnerPath}"`, { encoding: 'utf8' });
+  assert.ok(output.includes('145 / 145 Passed'), 'All 145 tests must pass in standard runner');
+  assert.ok(output.includes('ALL 145 AUTOMATED TESTS PASSED SUCCESSFULLY'), 'Summary banner must be present');
+});
+
+
+// -----------------------------------------------------------------------------
+// SUMMARY
+// -----------------------------------------------------------------------------
+console.log('\n=================================================================');
+console.log(`STRESS TEST RESULTS: ${passedCount} / ${totalCount} Passed`);
+console.log('=================================================================');
+
+if (passedCount !== totalCount) {
+  process.exit(1);
+}

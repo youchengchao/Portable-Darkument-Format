@@ -68,6 +68,22 @@
           </div>
         </section>
 
+        <!-- Preference Profiles -->
+        <section class="section" id="profiles-section">
+          <h2 class="section-title">Preference Profiles</h2>
+          <div class="profile-panel">
+            <div class="profile-select-row">
+              <select id="profile-select" class="profile-dropdown"></select>
+              <button id="btn-apply-profile" class="profile-btn profile-btn-primary">Apply</button>
+              <button id="btn-delete-profile" class="profile-btn profile-btn-danger">Delete</button>
+            </div>
+            <div class="profile-save-row">
+              <input type="text" id="profile-name-input" placeholder="New preset name..." maxlength="25">
+              <button id="btn-save-profile" class="profile-btn profile-btn-secondary">Save Preset</button>
+            </div>
+          </div>
+        </section>
+
         <!-- Theme Selection -->
         <section class="section" id="theme-section">
           <h2 class="section-title">Color Theme</h2>
@@ -281,6 +297,28 @@
           <h2 class="section-title">7-Day Reading Breakdown</h2>
           <div id="daily-chart-container" class="daily-chart-container">
             <!-- Render 7-day bar chart dynamically -->
+          </div>
+        </section>
+
+        <!-- Annual Reading Heatmap -->
+        <section class="section">
+          <h2 class="section-title">Annual Reading Heatmap</h2>
+          <div class="heatmap-card">
+            <div class="heatmap-header">
+              <span id="heatmap-total-days" class="heatmap-meta">0 active days in past year</span>
+              <div class="heatmap-legend">
+                <span class="legend-lbl">Less</span>
+                <span class="legend-box level-0"></span>
+                <span class="legend-box level-1"></span>
+                <span class="legend-box level-2"></span>
+                <span class="legend-box level-3"></span>
+                <span class="legend-box level-4"></span>
+                <span class="legend-lbl">More</span>
+              </div>
+            </div>
+            <div id="reading-heatmap-wrapper" class="heatmap-scroll-container">
+              <div id="reading-heatmap-grid" class="heatmap-grid"></div>
+            </div>
           </div>
         </section>
       </div>

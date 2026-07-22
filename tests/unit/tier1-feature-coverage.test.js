@@ -23,7 +23,17 @@ const {
   setupAutoNightAlarm,
   checkAutoNightSchedule
 } = require('../helpers/test-utils');
-const { calculateActiveStreak } = require('../../popup.js');
+const {
+  calculateActiveStreak,
+  BUILT_IN_PROFILES,
+  renderProfileDropdown,
+  saveCurrentProfile,
+  applyProfile,
+  deleteProfile,
+  renderReadingHeatmap,
+  renderPopupStats
+} = require('../../popup.js');
+const { TabSession, TabManager, TTSController, ttsController } = require('../../viewer.js');
 
 describe('Tier 1: Feature Coverage Test Suite', () => {
 
@@ -621,6 +631,771 @@ describe('Tier 1: Feature Coverage Test Suite', () => {
     });
   });
 
+  // =========================================================================
+  // Module 11: Custom Preference Profiles (Feature R1)
+  // =========================================================================
+  describe('Module 11: Custom Preference Profiles (Feature R1)', () => {
+    test('11.1 Built-in preference profiles are present and contain valid settings schema', () => {
+      assert.ok(BUILT_IN_PROFILES.default, 'Default profile missing');
+      assert.ok(BUILT_IN_PROFILES.built_in_night, 'Deep Night Focus profile missing');
+      assert.ok(BUILT_IN_PROFILES.built_in_ereader, 'Warm E-Reader profile missing');
+
+      assert.strictEqual(BUILT_IN_PROFILES.default.name, 'Default Dark');
+      assert.strictEqual(BUILT_IN_PROFILES.built_in_night.name, 'Deep Night Focus');
+      assert.strictEqual(BUILT_IN_PROFILES.built_in_ereader.name, 'Warm E-Reader');
+
+      assert.strictEqual(BUILT_IN_PROFILES.built_in_night.settings.theme, 'slate');
+      assert.strictEqual(BUILT_IN_PROFILES.built_in_ereader.settings.theme, 'sepia');
+    });
+
+    test('11.2 saveCurrentProfile persists custom profile payload and sets activeProfileId in chrome.storage.local', async () => {
+      await chrome.storage.local.set({ mode: 'enhanced', theme: 'sepia', brightness: 85, contrast: 105 });
+
+      await new Promise((resolve) => {
+        saveCurrentProfile('Study Preset', (newProfile) => {
+          assert.ok(newProfile, 'New profile object not returned');
+          assert.strictEqual(newProfile.name, 'Study Preset');
+          assert.strictEqual(newProfile.isBuiltIn, false);
+          assert.strictEqual(newProfile.settings.theme, 'sepia');
+          assert.strictEqual(newProfile.settings.brightness, 85);
+          resolve();
+        });
+      });
+
+      const store = await chrome.storage.local.get(null);
+      assert.ok(store.profiles, 'Profiles object missing in storage');
+      assert.strictEqual(store.activeProfileId, Object.keys(store.profiles).find(k => store.profiles[k].name === 'Study Preset'));
+    });
+
+    test('11.3 applyProfile loads profile settings into storage and active configuration', async () => {
+      await applyProfile('built_in_ereader');
+
+      const store = await chrome.storage.local.get(null);
+      assert.strictEqual(store.activeProfileId, 'built_in_ereader');
+      assert.strictEqual(store.theme, 'sepia');
+      assert.strictEqual(store.brightness, 90);
+      assert.strictEqual(store.bionicReading, true);
+    });
+
+    test('11.4 deleteProfile deletes custom profile and falls back to default if active profile is deleted', async () => {
+      let customId = null;
+      await new Promise((resolve) => {
+        saveCurrentProfile('Temp Preset', (newProfile) => {
+          customId = newProfile.id;
+          resolve();
+        });
+      });
+
+      let store = await chrome.storage.local.get(null);
+      assert.ok(store.profiles[customId], 'Custom profile was not created');
+      assert.strictEqual(store.activeProfileId, customId);
+
+      await new Promise((resolve) => {
+        deleteProfile(customId, resolve);
+      });
+
+      store = await chrome.storage.local.get(null);
+      assert.strictEqual(store.profiles[customId], undefined, 'Custom profile was not deleted');
+      assert.strictEqual(store.activeProfileId, 'default', 'Active profile did not fallback to default');
+    });
+
+    test('11.5 deleteProfile ignores built-in profile deletion requests', async () => {
+      await new Promise((resolve) => {
+        deleteProfile('built_in_night', resolve);
+        setTimeout(resolve, 50);
+      });
+
+      const store = await chrome.storage.local.get(null);
+      assert.ok(store.profiles.built_in_night || BUILT_IN_PROFILES.built_in_night, 'Built-in profile was deleted');
+    });
+
+    test('11.6 saveCurrentProfile truncates name to 25 chars and calls cb(false) on empty/whitespace name', async () => {
+      await new Promise((resolve) => {
+        saveCurrentProfile('   Super Long Profile Name Exceeding 25 Characters   ', (newProfile) => {
+          assert.ok(newProfile, 'New profile should be created');
+          assert.strictEqual(newProfile.name, 'Super Long Profile Name E', 'Name was not truncated to 25 chars');
+          assert.strictEqual(newProfile.name.length, 25);
+          resolve();
+        });
+      });
+
+      let emptyCallbackCalled = false;
+      saveCurrentProfile('   ', (res) => {
+        emptyCallbackCalled = true;
+        assert.strictEqual(res, false, 'Callback should be called with false for whitespace name');
+      });
+      assert.strictEqual(emptyCallbackCalled, true);
+
+      let nullCallbackCalled = false;
+      saveCurrentProfile('', (res) => {
+        nullCallbackCalled = true;
+        assert.strictEqual(res, false, 'Callback should be called with false for empty name');
+      });
+      assert.strictEqual(nullCallbackCalled, true);
+    });
+
+    test('11.7 deleteProfile invokes callback with false on invalid or built-in profileId', async () => {
+      let emptyResult = null;
+      deleteProfile('', (res) => { emptyResult = res; });
+      assert.strictEqual(emptyResult, false, 'Empty profileId should return false via cb');
+
+      let builtInResult = null;
+      deleteProfile('built_in_night', (res) => { builtInResult = res; });
+      assert.strictEqual(builtInResult, false, 'Built-in profileId should return false via cb');
+
+      let missingResult = null;
+      deleteProfile('non_existent_profile_id_123', (res) => { missingResult = res; });
+      assert.strictEqual(missingResult, false, 'Missing profileId should return false via cb');
+    });
+
+    test('11.8 deleteProfile triggers tab reload and resets UI to default settings when active profile is deleted', async () => {
+      let customId = null;
+      await new Promise((resolve) => {
+        saveCurrentProfile('Active Custom Profile', (p) => {
+          customId = p.id;
+          resolve();
+        });
+      });
+
+      // Set active tab to a PDF URL and reset reloaded status
+      if (chrome.__helpers) {
+        chrome.__helpers.setTab(1, { id: 1, active: true, currentWindow: true, url: 'https://example.com/doc.pdf', reloaded: false });
+      }
+
+      let deleteSuccess = null;
+      await new Promise((resolve) => {
+        deleteProfile(customId, (res) => {
+          deleteSuccess = res;
+          resolve();
+        });
+      });
+
+      assert.strictEqual(deleteSuccess, true, 'deleteProfile should return true on successful deletion');
+
+      const store = await chrome.storage.local.get(null);
+      assert.strictEqual(store.activeProfileId, 'default', 'Active profile fallback failed');
+      assert.strictEqual(store.mode, BUILT_IN_PROFILES.default.settings.mode);
+      assert.strictEqual(store.theme, BUILT_IN_PROFILES.default.settings.theme);
+
+      if (chrome.__helpers) {
+        const tab = chrome.__helpers.getTab(1);
+        assert.strictEqual(tab.reloaded, true, 'Active tab was not reloaded after active profile deletion');
+      }
+    });
+  });
+
+  // =========================================================================
+  // Module 12: GitHub-style Annual Reading Heatmap (Feature R2)
+  // =========================================================================
+  describe('Module 12: GitHub-style Annual Reading Heatmap (Feature R2)', () => {
+    function setupMockHeatmapDOM() {
+      const children = [];
+      const classListSet = new Set();
+
+      const cardEl = {
+        classList: {
+          add: (c) => classListSet.add(c),
+          remove: (c) => classListSet.delete(c),
+          contains: (c) => classListSet.has(c),
+          toggle: (c, val) => val ? classListSet.add(c) : classListSet.delete(c)
+        }
+      };
+
+      const wrapperEl = {
+        id: 'reading-heatmap-wrapper',
+        scrollLeft: 0,
+        scrollWidth: 800,
+        classList: {
+          add: (c) => classListSet.add(c),
+          remove: (c) => classListSet.delete(c),
+          contains: (c) => classListSet.has(c),
+          toggle: (c, val) => val ? classListSet.add(c) : classListSet.delete(c)
+        }
+      };
+
+      const gridEl = {
+        id: 'reading-heatmap-grid',
+        innerHTML: '',
+        children: children,
+        classList: {
+          add: (c) => classListSet.add(c),
+          remove: (c) => classListSet.delete(c),
+          contains: (c) => classListSet.has(c),
+          toggle: (c, val) => val ? classListSet.add(c) : classListSet.delete(c)
+        },
+        appendChild: (child) => { children.push(child); },
+        closest: (selector) => (selector === '.heatmap-card' ? cardEl : null)
+      };
+
+      const totalDaysEl = {
+        id: 'heatmap-total-days',
+        textContent: ''
+      };
+
+      const mockDoc = {
+        getElementById: (id) => {
+          if (id === 'reading-heatmap-grid') return gridEl;
+          if (id === 'heatmap-total-days') return totalDaysEl;
+          if (id === 'reading-heatmap-wrapper') return wrapperEl;
+          return null;
+        },
+        createElement: (tag) => {
+          const elClassList = new Set();
+          const dataset = {};
+          const attributes = {};
+          return {
+            tagName: tag.toUpperCase(),
+            className: '',
+            title: '',
+            dataset: dataset,
+            setAttribute: (k, v) => { attributes[k] = v; },
+            getAttribute: (k) => attributes[k],
+            classList: {
+              add: (c) => elClassList.add(c),
+              remove: (c) => elClassList.delete(c),
+              contains: (c) => elClassList.has(c)
+            }
+          };
+        }
+      };
+
+      return { mockDoc, gridEl, totalDaysEl, wrapperEl, cardEl, children, classListSet };
+    }
+
+    test('12.1 renderReadingHeatmap generates exactly 365 cell elements for the past year ending today', () => {
+      const origDoc = global.document;
+      const { mockDoc, children } = setupMockHeatmapDOM();
+      global.document = mockDoc;
+
+      try {
+        renderReadingHeatmap({}, false, false);
+        assert.strictEqual(children.length, 365, 'Heatmap should generate 365 cells');
+        const todayISO = new Date().toISOString().split('T')[0];
+        const lastCell = children[children.length - 1];
+        assert.strictEqual(lastCell.dataset.date, todayISO, 'Last cell date should match today');
+      } finally {
+        global.document = origDoc;
+      }
+    });
+
+    test('12.2 Reading minutes are correctly mapped to 5 intensity levels (level-0 through level-4)', () => {
+      const origDoc = global.document;
+      const { mockDoc, children } = setupMockHeatmapDOM();
+      global.document = mockDoc;
+
+      const now = new Date();
+      const getDateISO = (offsetDays) => {
+        const d = new Date(now);
+        d.setDate(d.getDate() - offsetDays);
+        return d.toISOString().split('T')[0];
+      };
+
+      const dateL0 = getDateISO(10);
+      const dateL1 = getDateISO(20);
+      const dateL2 = getDateISO(30);
+      const dateL3 = getDateISO(40);
+      const dateL4 = getDateISO(50);
+
+      const dailyStats = {
+        [dateL0]: { seconds: 0, pages: 0 },       // 0m -> level-0
+        [dateL1]: { seconds: 300, pages: 2 },     // 5m -> level-1 (1-14m)
+        [dateL2]: { seconds: 1200, pages: 10 },   // 20m -> level-2 (15-29m)
+        [dateL3]: { seconds: 2700, pages: 25 },   // 45m -> level-3 (30-59m)
+        [dateL4]: { seconds: 4500, pages: 40 }    // 75m -> level-4 (60m+)
+      };
+
+      try {
+        renderReadingHeatmap(dailyStats, false, false);
+
+        const findCell = (dateISO) => children.find(c => c.dataset.date === dateISO);
+
+        assert.strictEqual(findCell(dateL0).className, 'heatmap-cell level-0');
+        assert.strictEqual(findCell(dateL1).className, 'heatmap-cell level-1');
+        assert.strictEqual(findCell(dateL2).className, 'heatmap-cell level-2');
+        assert.strictEqual(findCell(dateL3).className, 'heatmap-cell level-3');
+        assert.strictEqual(findCell(dateL4).className, 'heatmap-cell level-4');
+      } finally {
+        global.document = origDoc;
+      }
+    });
+
+    test('12.3 Cell tooltips display formatted date, reading minutes, and page count', () => {
+      const origDoc = global.document;
+      const { mockDoc, children } = setupMockHeatmapDOM();
+      global.document = mockDoc;
+
+      const todayISO = new Date().toISOString().split('T')[0];
+      const dailyStats = {
+        [todayISO]: { seconds: 1800, pages: 15 } // 30m, 15 pages
+      };
+
+      try {
+        renderReadingHeatmap(dailyStats, false, false);
+        const todayCell = children[children.length - 1];
+
+        assert.ok(todayCell.title.includes(todayISO), 'Title should contain date ISO');
+        assert.ok(todayCell.title.includes('30 mins'), 'Title should contain reading minutes');
+        assert.ok(todayCell.title.includes('15 pages'), 'Title should contain page count');
+      } finally {
+        global.document = origDoc;
+      }
+    });
+
+    test('12.4 Heatmap active days meta count and auto-scroll position update correctly', () => {
+      const origDoc = global.document;
+      const { mockDoc, totalDaysEl, wrapperEl } = setupMockHeatmapDOM();
+      global.document = mockDoc;
+
+      const now = new Date();
+      const getDateISO = (offsetDays) => {
+        const d = new Date(now);
+        d.setDate(d.getDate() - offsetDays);
+        return d.toISOString().split('T')[0];
+      };
+
+      const dailyStats = {
+        [getDateISO(1)]: { seconds: 600, pages: 5 },
+        [getDateISO(2)]: { seconds: 1200, pages: 8 },
+        [getDateISO(3)]: { seconds: 1800, pages: 12 }
+      };
+
+      try {
+        renderReadingHeatmap(dailyStats, false, false);
+
+        assert.strictEqual(totalDaysEl.textContent, '3 active days in past year');
+        assert.strictEqual(wrapperEl.scrollLeft, wrapperEl.scrollWidth, 'Scroll container should auto-scroll to end');
+      } finally {
+        global.document = origDoc;
+      }
+    });
+
+    test('12.5 Supporter status or gold accent applies supporter-heatmap and theme-gold-accent classes', () => {
+      const origDoc = global.document;
+      const { mockDoc, classListSet } = setupMockHeatmapDOM();
+      global.document = mockDoc;
+
+      try {
+        // Active supporter
+        renderReadingHeatmap({}, true, false);
+        assert.ok(classListSet.has('supporter-heatmap'), 'supporter-heatmap class missing when isSupporter is true');
+        assert.ok(classListSet.has('theme-gold-accent'), 'theme-gold-accent class missing when isSupporter is true');
+
+        // Gold accent toggled
+        renderReadingHeatmap({}, false, true);
+        assert.ok(classListSet.has('supporter-heatmap'), 'supporter-heatmap class missing when goldAccent is true');
+        assert.ok(classListSet.has('theme-gold-accent'), 'theme-gold-accent class missing when goldAccent is true');
+
+        // Neither active
+        renderReadingHeatmap({}, false, false);
+        assert.strictEqual(classListSet.has('supporter-heatmap'), false, 'supporter-heatmap should be removed when non-supporter');
+        assert.strictEqual(classListSet.has('theme-gold-accent'), false, 'theme-gold-accent should be removed when non-supporter');
+      } finally {
+        global.document = origDoc;
+      }
+    });
+  });
+
+  // =========================================================================
+  // Module 13: Multi-Tab PDF Workspace (5 Tests)
+  // =========================================================================
+  describe('Module 13: Multi-Tab PDF Workspace', () => {
+    beforeEach(() => {
+      TabManager.tabs = [];
+      TabManager.activeTabId = null;
+    });
+
+    test('13.1 TabSession data model initializes structured session properties', () => {
+      const session = new TabSession({
+        id: 'test_tab_1',
+        url: 'file:///sample.pdf',
+        title: 'sample.pdf',
+        numPages: 10,
+        activePageNum: 3,
+        currentScale: 1.25,
+        scrollTop: 150,
+        scrollLeft: 0,
+        tocItems: [{ title: 'Chapter 1', page: 1 }],
+        aspectRatio: 1.5,
+        isLoaded: true
+      });
+
+      assert.strictEqual(session.id, 'test_tab_1');
+      assert.strictEqual(session.url, 'file:///sample.pdf');
+      assert.strictEqual(session.title, 'sample.pdf');
+      assert.strictEqual(session.numPages, 10);
+      assert.strictEqual(session.activePageNum, 3);
+      assert.strictEqual(session.currentScale, 1.25);
+      assert.strictEqual(session.scrollTop, 150);
+      assert.strictEqual(session.tocItems.length, 1);
+      assert.strictEqual(session.aspectRatio, 1.5);
+      assert.strictEqual(session.isLoaded, true);
+      assert.ok(session.visitedPagesSet instanceof Set);
+    });
+
+    test('13.2 TabManager.createTab creates new tab session and sets activeTabId', () => {
+      const tab1 = TabManager.createTab('file:///doc1.pdf', 'Document 1');
+
+      assert.strictEqual(TabManager.tabs.length, 1);
+      assert.strictEqual(TabManager.activeTabId, tab1.id);
+      assert.strictEqual(TabManager.getActiveTab().title, 'Document 1');
+
+      const tab2 = TabManager.createTab('file:///doc2.pdf', 'Document 2');
+      assert.strictEqual(TabManager.tabs.length, 2);
+      assert.strictEqual(TabManager.activeTabId, tab2.id);
+      assert.strictEqual(TabManager.getActiveTab().title, 'Document 2');
+    });
+
+    test('13.3 TabManager.switchToTab preserves outgoing tab state and activates target tab', () => {
+      TabManager.tabs = [];
+      TabManager.activeTabId = null;
+
+      const tab1 = TabManager.createTab('file:///doc1.pdf', 'Document 1');
+      tab1.pdfDoc = { numPages: 5 };
+      tab1.numPages = 5;
+      tab1.activePageNum = 2;
+      tab1.currentScale = 1.5;
+      tab1.scrollTop = 300;
+
+      const tab2 = TabManager.createTab('file:///doc2.pdf', 'Document 2');
+      tab2.pdfDoc = { numPages: 8 };
+      tab2.numPages = 8;
+      tab2.activePageNum = 4;
+      tab2.currentScale = 1.0;
+      tab2.scrollTop = 100;
+
+      TabManager.switchToTab(tab1.id);
+      assert.strictEqual(TabManager.activeTabId, tab1.id);
+      assert.strictEqual(TabManager.getActiveTab().title, 'Document 1');
+      assert.strictEqual(TabManager.getActiveTab().currentScale, 1.5);
+      assert.strictEqual(TabManager.getActiveTab().scrollTop, 300);
+      assert.strictEqual(TabManager.getActiveTab().activePageNum, 2);
+
+      TabManager.switchToTab(tab2.id);
+      assert.strictEqual(TabManager.activeTabId, tab2.id);
+      assert.strictEqual(TabManager.getActiveTab().title, 'Document 2');
+      assert.strictEqual(TabManager.getActiveTab().currentScale, 1.0);
+      assert.strictEqual(TabManager.getActiveTab().scrollTop, 100);
+      assert.strictEqual(TabManager.getActiveTab().activePageNum, 4);
+
+      // Verify outgoing tab1 state preserved
+      assert.strictEqual(tab1.currentScale, 1.5);
+      assert.strictEqual(tab1.scrollTop, 300);
+      assert.strictEqual(tab1.activePageNum, 2);
+    });
+
+    test('13.4 TabManager.closeTab closes tab, destroys pdfDoc resources, switches to adjacent tab', () => {
+      TabManager.tabs = [];
+      TabManager.activeTabId = null;
+
+      let destroyed = false;
+      const tab1 = TabManager.createTab('file:///doc1.pdf', 'Doc 1');
+      tab1.pdfDoc = { destroy: () => { destroyed = true; } };
+      tab1.arrayBuffer = new ArrayBuffer(8);
+
+      const tab2 = TabManager.createTab('file:///doc2.pdf', 'Doc 2');
+      const tab3 = TabManager.createTab('file:///doc3.pdf', 'Doc 3');
+
+      assert.strictEqual(TabManager.activeTabId, tab3.id);
+
+      // Close tab1 (non-active, has pdfDoc & arrayBuffer)
+      TabManager.closeTab(tab1.id);
+      assert.strictEqual(destroyed, true, 'pdfDoc.destroy() should be called');
+      assert.strictEqual(tab1.pdfDoc, null, 'tab1.pdfDoc should be cleared');
+      assert.strictEqual(tab1.arrayBuffer, null, 'tab1.arrayBuffer should be cleared');
+      assert.strictEqual(TabManager.tabs.length, 2);
+      assert.strictEqual(TabManager.activeTabId, tab3.id);
+
+      // Close active tab3 -> switches to tab2
+      TabManager.closeTab(tab3.id);
+      assert.strictEqual(TabManager.tabs.length, 1);
+      assert.strictEqual(TabManager.activeTabId, tab2.id);
+
+      // Close remaining tab2 -> creates default empty tab
+      TabManager.closeTab(tab2.id);
+      assert.strictEqual(TabManager.tabs.length, 1);
+      assert.strictEqual(TabManager.getActiveTab().title, 'PDF Dark Mode');
+    });
+
+    test('13.5 TabManager.renderTabBarUI generates dynamic DOM elements with active highlight and observer/render guards work', async () => {
+      TabManager.tabs = [];
+      TabManager.activeTabId = null;
+      const origDoc = global.document;
+      const createdElements = [];
+      let tabListChildren = [];
+      let btnAddBound = false;
+
+      const mockTabList = {
+        get innerHTML() { return ''; },
+        set innerHTML(val) { if (val === '') tabListChildren = []; },
+        appendChild: (child) => tabListChildren.push(child)
+      };
+
+      const mockBtnAdd = {
+        dataset: {},
+        addEventListener: (event, cb) => {
+          if (event === 'click') btnAddBound = true;
+        }
+      };
+
+      global.document = {
+        getElementById: (id) => {
+          if (id === 'tab-list') return mockTabList;
+          if (id === 'btn-add-tab') return mockBtnAdd;
+          return null;
+        },
+        createElement: (tag) => {
+          const children = [];
+          const el = {
+            tagName: tag.toUpperCase(),
+            className: '',
+            dataset: {},
+            textContent: '',
+            title: '',
+            listeners: {},
+            appendChild: (c) => children.push(c),
+            addEventListener: (evt, fn) => { el.listeners[evt] = fn; }
+          };
+          createdElements.push(el);
+          return el;
+        }
+      };
+
+      try {
+        TabManager.createTab('file:///a.pdf', 'Alpha');
+        TabManager.createTab('file:///b.pdf', 'Beta');
+
+        TabManager.renderTabBarUI();
+
+        assert.strictEqual(tabListChildren.length, 2, 'Tab list should contain 2 tab-item elements');
+        assert.ok(tabListChildren[1].className.includes('active'), 'Active tab element should have active class');
+        assert.ok(btnAddBound, '#btn-add-tab click listener should be bound');
+      } finally {
+        global.document = origDoc;
+      }
+
+      // Verify pageObserver disconnect on setupIntersectionObserver
+      let disconnected = false;
+      const origIO = global.IntersectionObserver;
+      global.IntersectionObserver = class {
+        constructor(cb, options) {}
+        observe() {}
+        disconnect() {
+          disconnected = true;
+        }
+      };
+
+      try {
+        const viewer = require('../../viewer.js');
+        viewer.setupIntersectionObserver();
+        assert.ok(viewer.pageObserver, 'pageObserver instance should exist');
+
+        viewer.setupIntersectionObserver();
+        assert.strictEqual(disconnected, true, 'previous pageObserver.disconnect() should have been called');
+      } finally {
+        global.IntersectionObserver = origIO;
+      }
+
+      // Verify renderPage async guard
+      const viewer = require('../../viewer.js');
+      TabManager.tabs = [];
+
+      let renderCalled = false;
+      const mockPage = {
+        getViewport: () => ({ width: 100, height: 100 }),
+        render: () => {
+          renderCalled = true;
+          return { promise: Promise.resolve() };
+        }
+      };
+
+      const wrapper = {
+        id: 'page-wrapper-1',
+        dataset: { rendered: 'false' },
+        appendChild: () => {},
+        querySelector: () => null
+      };
+
+      global.document = {
+        getElementById: (id) => id === 'page-wrapper-1' ? wrapper : null,
+        createElement: (tag) => ({ style: {}, parentNode: null, remove: () => {} })
+      };
+
+      let pagePromiseResolve;
+      const mockPdfDoc = {
+        getPage: () => new Promise(resolve => { pagePromiseResolve = resolve; })
+      };
+
+      try {
+        const tab1 = TabManager.createTab('file:///doc1.pdf', 'Tab 1');
+        tab1.pdfDoc = mockPdfDoc;
+        TabManager.switchToTab(tab1.id);
+        const initialTabId = TabManager.activeTabId;
+
+        // Call renderPage while tab1 is active
+        viewer.renderPage(1);
+        assert.strictEqual(wrapper.dataset.rendered, 'true', 'wrapper should set rendered=true while pending');
+
+        // Switch to tab2 before getPage resolves
+        const tab2 = TabManager.createTab('file:///doc2.pdf', 'Tab 2');
+        assert.notStrictEqual(TabManager.activeTabId, initialTabId);
+
+        // Resolve getPage now
+        pagePromiseResolve(mockPage);
+        await new Promise(r => setTimeout(r, 10));
+
+        assert.strictEqual(wrapper.dataset.rendered, 'false', 'wrapper.dataset.rendered should reset to false on tab switch');
+        assert.strictEqual(renderCalled, false, 'page.render should not be executed for obsolete tab');
+      } finally {
+        global.document = origDoc;
+      }
+    });
+  });
+
+  // =========================================================================
+  // Module 8: Text-to-Speech (TTS) Narration & Highlighting (5 Tests)
+  // =========================================================================
+  describe('Module 8: Text-to-Speech (TTS) Narration & Highlighting', () => {
+    test('8.1 TTS controller initialization and voice listing', () => {
+      const controller = new TTSController();
+      const voices = controller.getSynth().getVoices();
+      assert.ok(Array.isArray(voices), 'getVoices should return array of voices');
+      assert.ok(voices.length > 0, 'voices array should not be empty in mock environment');
+
+      const selectVoice = {
+        innerHTML: '',
+        options: [],
+        appendChild: function(opt) { this.options.push(opt); }
+      };
+
+      const origDoc = global.document;
+      global.document = {
+        getElementById: (id) => id === 'tts-select-voice' ? selectVoice : null,
+        createElement: (tag) => ({ value: '', textContent: '' })
+      };
+
+      try {
+        controller.populateVoices();
+        assert.ok(controller.voices.length > 0, 'controller.voices populated');
+        assert.ok(selectVoice.options.length > 0, 'voice options appended to dropdown');
+      } finally {
+        global.document = origDoc;
+      }
+    });
+
+    test('8.2 Real-time sentence segmentation & DOM highlighting class toggling', () => {
+      const controller = new TTSController();
+
+      function createMockSpan(text) {
+        const classes = new Set();
+        return {
+          textContent: text,
+          classList: {
+            add: (c) => classes.add(c),
+            remove: (c) => classes.delete(c),
+            contains: (c) => classes.has(c),
+            has: (c) => classes.has(c)
+          },
+          scrollIntoView: () => {}
+        };
+      }
+
+      const span1 = createMockSpan('First sentence. ');
+      const span2 = createMockSpan('Second sentence? ');
+
+      const mockContainer = {
+        querySelectorAll: (selector) => {
+          if (selector === '.textLayer span') return [span1, span2];
+          return [];
+        }
+      };
+
+      const origDoc = global.document;
+      global.document = {
+        querySelectorAll: (selector) => {
+          if (selector === '.tts-sentence-highlight') return [span1, span2].filter(s => s.classList.contains('tts-sentence-highlight'));
+          return [];
+        }
+      };
+
+      try {
+        const sentences = controller.loadSentencesFromDOM(mockContainer);
+        assert.strictEqual(sentences.length, 2, '2 sentences extracted');
+        assert.strictEqual(sentences[0].text, 'First sentence.');
+        assert.strictEqual(sentences[1].text, 'Second sentence?');
+
+        controller.highlightCurrentSentence();
+        assert.strictEqual(span1.classList.contains('tts-sentence-highlight'), true, 'span1 has highlight class for sentence 0');
+
+        controller.next();
+        assert.strictEqual(span1.classList.contains('tts-sentence-highlight'), false, 'span1 highlight removed');
+        assert.strictEqual(span2.classList.contains('tts-sentence-highlight'), true, 'span2 has highlight class for sentence 1');
+      } finally {
+        global.document = origDoc;
+      }
+    });
+
+    test('8.3 Speech synthesis play, pause, resume, and stop playback lifecycle', () => {
+      const controller = new TTSController();
+      controller.loadSentencesFromText("First sentence. Second sentence.");
+
+      controller.play();
+      assert.strictEqual(controller.isPlaying, true, 'controller is playing');
+      assert.strictEqual(controller.isPaused, false, 'controller is not paused');
+      assert.strictEqual(controller.getSynth().speaking, true, 'synth is speaking');
+
+      controller.pause();
+      assert.strictEqual(controller.isPaused, true, 'controller is paused');
+      assert.strictEqual(controller.isPlaying, false, 'isPlaying false when paused');
+
+      controller.resume();
+      assert.strictEqual(controller.isPlaying, true, 'controller resumed');
+      assert.strictEqual(controller.isPaused, false, 'isPaused false on resume');
+
+      controller.stop();
+      assert.strictEqual(controller.isPlaying, false, 'controller stopped');
+      assert.strictEqual(controller.currentIndex, 0, 'index reset to 0');
+    });
+
+    test('8.4 Speed rate changes and voice selection during narration', () => {
+      const controller = new TTSController();
+      controller.loadSentencesFromText("Test rate and voice sentence.");
+
+      controller.setRate(1.5);
+      assert.strictEqual(controller.rate, 1.5, 'rate updated to 1.5');
+
+      const synthVoices = controller.getSynth().getVoices();
+      if (synthVoices.length > 0) {
+        controller.setVoice(synthVoices[0].voiceURI);
+        assert.strictEqual(controller.selectedVoice, synthVoices[0], 'selectedVoice updated');
+      }
+
+      controller.play();
+      assert.ok(controller.utterance, 'utterance created');
+      assert.strictEqual(controller.utterance.rate, 1.5, 'utterance inherits speed rate');
+      controller.stop();
+    });
+
+    test('8.5 Prev/Next sentence navigation and automatic advancement on speech end', () => {
+      const controller = new TTSController();
+      const mockSynth = controller.getSynth();
+      controller.loadSentencesFromText("Sentence 1. Sentence 2. Sentence 3.");
+
+      controller.play();
+      assert.strictEqual(controller.currentIndex, 0, 'starts at sentence 0');
+
+      // Simulate speech end event on utterance
+      mockSynth.finishCurrentUtterance();
+      assert.strictEqual(controller.currentIndex, 1, 'automatically advances to sentence 1 on speech end');
+
+      controller.next();
+      assert.strictEqual(controller.currentIndex, 2, 'navigates to sentence 2 on next()');
+
+      controller.prev();
+      assert.strictEqual(controller.currentIndex, 1, 'navigates back to sentence 1 on prev()');
+
+      controller.stop();
+    });
+  });
 });
 
 

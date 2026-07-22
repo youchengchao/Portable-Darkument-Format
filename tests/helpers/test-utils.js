@@ -13,6 +13,7 @@ const chromeMock = setupGlobalChromeMock();
  * Initialize simulated Chrome storage defaults according to PROJECT.md schema
  */
 function getDefaultStorageState() {
+  const popup = require('../../popup');
   return {
     active: true,
     mode: 'enhanced',
@@ -43,7 +44,9 @@ function getDefaultStorageState() {
       goldAccent: false,
       promptDismissedCount: 0,
       lastPromptDate: ''
-    }
+    },
+    activeProfileId: 'default',
+    profiles: popup.BUILT_IN_PROFILES || {}
   };
 }
 
@@ -295,5 +298,7 @@ module.exports = {
   isPdfUrl: background.isPdfUrl,
   handleReadFileBytes: background.handleReadFileBytes,
   arrayBufferToBase64: contentScript.arrayBufferToBase64,
-  handleLocalPdf: contentScript.handleLocalPdf
+  handleLocalPdf: contentScript.handleLocalPdf,
+  TTSController: viewer.TTSController,
+  ttsController: viewer.ttsController
 };
