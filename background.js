@@ -110,8 +110,36 @@ function redirectToViewer(tabId, url) {
   chrome.tabs.update(tabId, { url: viewerUrl });
 }
 
-// 1. Intercept via webNavigation (URL checks - catches file:/// URLs)
+// Direct CSS Injection for local file:/// URLs (applies native dark mode directly to Edge PDF viewer)
+if (typeof chrome !== 'undefined' && chrome.webNavigation && chrome.scripting) {
+  chrome.webNavigation.onCommitted.addListener((details) => {
+    if (details.frameId === 0 && details.url && details.url.startsWith('file:///') && details.url.toLowerCase().endsWith('.pdf')) {
+      chrome.storage.local.get(['active', 'theme', 'brightness', 'contrast'], (settings) => {
+        if (settings.active !== false) {
+          const bright = (settings.brightness || 100) / 100;
+          const contrast = (settings.contrast || 100) / 100;
+          const filterStr = `invert(0.9) hue-rotate(180deg) brightness(${bright}) contrast(${contrast})`;
+          chrome.scripting.insertCSS({
+            target: { tabId: details.tabId },
+            css: `
+              html, body, embed, object, pdf-viewer, #viewer {
+                filter: ${filterStr} !important;
+                background-color: #121212 !important;
+              }
+              img, svg, canvas {
+                filter: invert(1) hue-rotate(180deg) !important;
+              }
+            `
+          }).catch(() => {});
+        }
+      });
+    }
+  });
+}
+
+// 1. Intercept via webNavigation (URL checks - catches web PDF URLs)
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+
   // Only target main frame page load
   if (details.frameId === 0 && details.url) {
     chrome.storage.local.get(['active', 'mode'], (settings) => {
