@@ -1934,8 +1934,15 @@ function setupHighlightSelectionListeners() {
     });
   }
 
+  const btnExportFullTxt = document.getElementById('btn-export-full-txt');
   const btnExportMd = document.getElementById('btn-export-md');
   const btnExportTxt = document.getElementById('btn-export-txt');
+
+  if (btnExportFullTxt) {
+    btnExportFullTxt.addEventListener('click', () => {
+      exportFullPdfText();
+    });
+  }
 
   if (btnExportMd) {
     btnExportMd.addEventListener('click', () => {
@@ -1957,6 +1964,28 @@ function setupHighlightSelectionListeners() {
     });
   }
 }
+
+async function exportFullPdfText() {
+  if (!pdfDoc) {
+    alert('PDF document is still loading...');
+    return;
+  }
+  let fullTextParts = [];
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    try {
+      const page = await pdfDoc.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullTextParts.push(`--- Page ${i} ---\n${pageText}`);
+    } catch (e) {
+      fullTextParts.push(`--- Page ${i} ---\n[Error reading text on page ${i}]`);
+    }
+  }
+  const content = fullTextParts.join('\n\n');
+  const docName = (docTitle?.textContent || 'document').replace(/[^a-zA-Z0-9_-]/g, '_');
+  triggerFileDownload(`${docName}_fulltext.txt`, content, 'text/plain');
+}
+
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -1982,7 +2011,9 @@ if (typeof module !== 'undefined' && module.exports) {
     transformTextToBionic,
     applyBionicReadingToViewer,
     updateReadingRuler,
-    applyFocusSettings
+    applyFocusSettings,
+    exportFullPdfText
   };
 }
+
 
