@@ -76,21 +76,21 @@ if (typeof chrome !== 'undefined' && chrome.commands) {
 // Helper to check if URL is a PDF file based on path
 function isPdfUrl(url) {
   try {
+    if (!url || typeof url !== 'string') return false;
+    if (url.includes('viewer.html') || url.includes('native=true')) {
+      return false;
+    }
+    const cleanUrl = url.split('?')[0].split('#')[0].toLowerCase();
+    if (cleanUrl.endsWith('.pdf')) {
+      return true;
+    }
     const parsed = new URL(url);
-    const pathname = parsed.pathname.toLowerCase();
-    // Exclude cases where it's our own viewer
-    if (url.includes('viewer.html')) {
-      return false;
-    }
-    // file:/// local files open with native speed and dark filters via content.js to bypass browser sandbox origin blocks
-    if (url.startsWith('file:///')) {
-      return false;
-    }
-    return pathname.endsWith('.pdf') || parsed.search.includes('pdf=true');
+    return parsed.search.includes('pdf=true');
   } catch (e) {
     return false;
   }
 }
+
 
 
 // Redirect tab to custom viewer

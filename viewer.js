@@ -114,153 +114,65 @@ function sanitizeFileUrl(url) {
 
 // Load the PDF via PDF.js or local XMLHttp/Fetch diagnostic pipeline
 function loadPdf(url) {
-  loadingSpinner.style.display = 'flex';
+  if (loadingSpinner) loadingSpinner.style.display = 'flex';
   url = sanitizeFileUrl(url);
-  
-  const debugLogs = [];
-  function logDebug(msg) {
-    console.log('[PDF-Dark-Diagnostics]', msg);
-    debugLogs.push(msg);
-  }
 
-  logDebug(`Initiated load for PDF: "${url}"`);
+  const loadingTask = pdfjsLib.getDocument({
+    url: url,
+    cMapUrl: 'pdfjs/cmaps/',
+    cMapPacked: true
+  });
 
-  if (url.startsWith('file:///')) {
-    logDebug('Local file URL detected. Starting recovery loading pipeline...');
-    
-    // Method 0: Background Service Worker Relay (bypasses Extension sandbox origin blocks)
+  loadingTask.promise.then(pdf => {
+    pdfDoc = pdf;
+    if (totalPagesEl) totalPagesEl.textContent = pdf.numPages;
+    if (loadingSpinner) loadingSpinner.style.display = 'none';
+
+    pdf.getPage(1).then(page => {
+      const viewport = page.getViewport({ scale: 1.0 });
+      const aspectRatio = viewport.height / viewport.width;
+      createPagePlaceholders(pdf.numPages, aspectRatio);
+      setupIntersectionObserver();
+      restoreReadingPosition();
+      loadTocOutline(pdf);
+    });
+  }).catch(error => {
+    console.log('PDF.js Direct Load failed, trying Background Relay...', error);
+    tryBackgroundRelay();
+  });
+
+  function tryBackgroundRelay() {
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      logDebug('Attempting Method 0: Background Service Worker Relay...');
       try {
         chrome.runtime.sendMessage({ action: 'read_file_bytes', url: url }, (res) => {
-          if (chrome.runtime.lastError || !res) {
-            logDebug(`Background relay error or empty response. Falling back to XHR.`);
-            tryXhrMethod();
+          if (chrome.runtime.lastError || !res || !res.success || !res.data) {
+            showDropzoneFallback();
             return;
           }
-          if (res.success && res.data) {
-            logDebug('Background Service Worker Relay successful! Converting Base64 bytes...');
-            const binaryString = atob(res.data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            loadPdfFromData(bytes.buffer);
-          } else {
-            logDebug(`Background relay failed: ${res.error || 'Unknown error'}. Falling back to XHR.`);
-            tryXhrMethod();
+          const binaryString = atob(res.data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
           }
+          loadPdfFromData(bytes.buffer);
         });
-        return;
       } catch (e) {
-        logDebug(`Background relay exception: ${e.message}. Falling back to XHR.`);
-        tryXhrMethod();
+        showDropzoneFallback();
       }
     } else {
-      tryXhrMethod();
+      showDropzoneFallback();
     }
+  }
 
-    function tryXhrMethod() {
-      // Attempt Method 1: XMLHttpRequest
-      logDebug('Attempting Method 1: XMLHttpRequest...');
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url, true);
-      xhr.responseType = 'arraybuffer';
-      
-      xhr.onload = function() {
-        logDebug(`XMLHttpRequest onload triggered. Status: ${xhr.status}, StatusText: ${xhr.statusText}`);
-        if (xhr.status === 200 || xhr.status === 0) {
-          if (xhr.response && xhr.response.byteLength > 0) {
-            logDebug(`XMLHttpRequest successful! Loaded ${xhr.response.byteLength} bytes.`);
-            loadPdfFromData(xhr.response);
-          } else {
-            logDebug('XMLHttpRequest returned an empty array buffer. Falling back to fetch.');
-            tryFetchMethod();
-          }
-        } else {
-          logDebug(`XMLHttpRequest failed with non-success status code.`);
-          tryFetchMethod();
-        }
-      };
-      
-      xhr.onerror = function(err) {
-        logDebug('XMLHttpRequest onerror triggered. This usually indicates a CORS/origin block.');
-        tryFetchMethod();
-      };
-      
-      try {
-        xhr.send();
-      } catch (e) {
-        logDebug(`XMLHttpRequest send threw immediate error: ${e.message}`);
-        tryFetchMethod();
-      }
-    }
-    
-    // Attempt Method 2: Fetch
-
-    function tryFetchMethod() {
-      logDebug('Attempting Method 2: fetch()...');
-      fetch(url)
-        .then(res => {
-          logDebug(`fetch() response received. Status: ${res.status}, Ok: ${res.ok}`);
-          return res.arrayBuffer();
-        })
-        .then(arrayBuffer => {
-          logDebug(`fetch() successful! Loaded ${arrayBuffer.byteLength} bytes.`);
-          loadPdfFromData(arrayBuffer);
-        })
-        .catch(err => {
-          logDebug(`fetch() failed with error: ${err.message}`);
-          showFailureSummary();
-        });
-    }
-
-    function showFailureSummary() {
-      const summaryMsg = `
-        <strong>Could not access the local file.</strong><br/>
-        This is usually because the extension does not have permission to access local files.<br/><br/>
-        
-        <strong>Diagnostic Timeline:</strong>
-        <pre style="background: rgba(0,0,0,0.5); border: 1px solid #3f3f46; color: #a1a1aa; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; max-height: 150px; overflow-y: auto; text-align: left; margin: 10px 0; line-height: 1.4;">${debugLogs.join('\n')}</pre>
-        
-        <strong>To fix this in Microsoft Edge:</strong><br/>
-        1. Open Microsoft Edge and go to <code style="background: rgba(255,255,255,0.15); padding: 2px 4px; border-radius: 4px; font-family: monospace;">edge://extensions/</code><br/>
-        2. Click on the <strong>Details</strong> button under the <strong>PDF Dark Mode</strong> extension.<br/>
-        3. Scroll down and toggle the switch for <strong>"Allow access to file URLs"</strong> to <strong>ON</strong>.<br/>
-        4. Refresh this tab to view your PDF.
-      `;
-      showError(summaryMsg, true);
-    }
-  } else {
-    // For standard web URLs, load using PDF.js document loader
-    logDebug('Web URL detected. Loading via native PDF.js network loader.');
-    const loadingTask = pdfjsLib.getDocument({
-      url: url,
-      cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
-      cMapPacked: true
-    });
-    
-    loadingTask.promise.then(pdf => {
-      pdfDoc = pdf;
-      totalPagesEl.textContent = pdf.numPages;
-      loadingSpinner.style.display = 'none';
-
-      pdf.getPage(1).then(page => {
-        const viewport = page.getViewport({ scale: 1.0 });
-        const aspectRatio = viewport.height / viewport.width;
-        createPagePlaceholders(pdf.numPages, aspectRatio);
-        setupIntersectionObserver();
-        restoreReadingPosition();
-        loadTocOutline(pdf);
-      });
-    }).catch(error => {
-      console.error('Error loading PDF:', error);
-      showError(`Error loading PDF: ${error.message}`);
-    });
+  function showDropzoneFallback() {
+    if (loadingSpinner) loadingSpinner.style.display = 'none';
+    const dropzone = document.getElementById('dropzone-overlay');
+    if (dropzone) dropzone.classList.remove('hidden');
   }
 }
 
 function loadPdfFromData(arrayBuffer) {
+
   const loadingTask = pdfjsLib.getDocument({
     data: arrayBuffer,
     cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
