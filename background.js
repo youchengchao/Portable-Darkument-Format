@@ -1,5 +1,11 @@
-// Initialize settings on installation
-chrome.runtime.onInstalled.addListener(() => {
+// Initialize settings on installation & open Welcome Page
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details && details.reason === 'install') {
+    if (chrome.tabs && chrome.runtime.getURL) {
+      chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
+    }
+  }
+
   chrome.storage.local.get([
     'active',
     'mode',
@@ -46,6 +52,26 @@ chrome.runtime.onInstalled.addListener(() => {
     }
   });
 });
+
+// Handle Global Keyboard Shortcut Commands
+if (typeof chrome !== 'undefined' && chrome.commands) {
+  chrome.commands.onCommand.addListener((command) => {
+    if (command === 'toggle-dark-mode') {
+      chrome.storage.local.get('active', (res) => {
+        chrome.storage.local.set({ active: !(res.active !== false) });
+      });
+    } else if (command === 'toggle-bionic-reading') {
+      chrome.storage.local.get('bionicReading', (res) => {
+        chrome.storage.local.set({ bionicReading: !Boolean(res.bionicReading) });
+      });
+    } else if (command === 'toggle-reading-ruler') {
+      chrome.storage.local.get('readingRuler', (res) => {
+        chrome.storage.local.set({ readingRuler: !Boolean(res.readingRuler) });
+      });
+    }
+  });
+}
+
 
 // Helper to check if URL is a PDF file based on path
 function isPdfUrl(url) {

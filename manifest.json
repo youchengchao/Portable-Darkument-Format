@@ -34,13 +34,35 @@
       "all_frames": true
     }
   ],
+  "commands": {
+    "toggle-dark-mode": {
+      "suggested_key": {
+        "default": "Alt+Shift+D"
+      },
+      "description": "Toggle PDF Dark Mode ON/OFF"
+    },
+    "toggle-bionic-reading": {
+      "suggested_key": {
+        "default": "Alt+Shift+B"
+      },
+      "description": "Toggle Bionic Reading Mode"
+    },
+    "toggle-reading-ruler": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Toggle Reading Ruler Guide"
+    }
+  },
   "web_accessible_resources": [
     {
       "resources": [
         "viewer.html",
+        "welcome.html",
         "pdfjs/*"
       ],
       "matches": ["<all_urls>"]
     }
   ]
 }
+

@@ -60,6 +60,16 @@
         </div>
       </div>
 
+      <!-- In-Viewer Dark Search Bar Overlay (Ctrl+F) -->
+      <div id="search-bar" class="search-bar hidden">
+        <input type="text" id="search-input" placeholder="Find in document... (Ctrl+F)" />
+        <span id="search-count" class="search-count">0 / 0</span>
+        <button id="btn-search-prev" class="btn-search-nav" title="Previous match (Shift+Enter)">▲</button>
+        <button id="btn-search-next" class="btn-search-nav" title="Next match (Enter)">▼</button>
+        <button id="btn-close-search" class="btn-search-close" title="Close Search (Esc)">✕</button>
+      </div>
+
+
       <div class="toolbar-section right">
         <!-- Bionic Reading Toggle Button -->
         <button id="btn-toggle-bionic" class="btn" title="Toggle Bionic Reading Mode (Speed Reading Focus)">

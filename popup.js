@@ -780,7 +780,65 @@ function setupPopupExportListeners() {
       });
     });
   }
+
+  setupBackupRestoreListeners();
 }
+
+function setupBackupRestoreListeners() {
+  if (typeof document === 'undefined') return;
+  const btnBackup = document.getElementById('btn-backup-data');
+  const btnRestoreTrigger = document.getElementById('btn-restore-trigger');
+  const fileInputRestore = document.getElementById('file-input-restore');
+  const langSelector = document.getElementById('lang-selector');
+
+  if (btnBackup) {
+    btnBackup.addEventListener('click', () => {
+      if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+      chrome.storage.local.get(null, (allData) => {
+        const jsonStr = JSON.stringify(allData, null, 2);
+        triggerDownloadInPopup('pdf_dark_backup.json', jsonStr, 'application/json');
+      });
+    });
+  }
+
+  if (btnRestoreTrigger && fileInputRestore) {
+    btnRestoreTrigger.addEventListener('click', () => fileInputRestore.click());
+    fileInputRestore.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const restoredData = JSON.parse(evt.target.result);
+            if (typeof restoredData === 'object' && restoredData !== null) {
+              if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+                chrome.storage.local.set(restoredData, () => {
+                  alert('Data & settings successfully restored!');
+                  location.reload();
+                });
+              }
+            }
+          } catch (err) {
+            alert('Invalid JSON backup file.');
+          }
+        };
+        reader.readAsText(file);
+      }
+    });
+  }
+
+  if (langSelector) {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get('language', (res) => {
+        if (res && res.language) langSelector.value = res.language;
+      });
+    }
+    langSelector.addEventListener('change', (e) => {
+      saveSetting('language', e.target.value);
+    });
+  }
+}
+
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {

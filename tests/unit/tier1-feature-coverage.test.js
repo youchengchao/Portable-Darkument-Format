@@ -573,5 +573,54 @@ describe('Tier 1: Feature Coverage Test Suite', () => {
     });
   });
 
+  // =========================================================================
+  // Module 10: Phase 2 Web Store Production Polish (4 Tests)
+  // =========================================================================
+  describe('Module 10: Phase 2 Web Store Production Polish', () => {
+    test('10.1 In-viewer search bar overlay & Export Full PDF Text button present in viewer HTML & JS exports', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const viewerHtml = fs.readFileSync(path.join(__dirname, '../../viewer.html'), 'utf8');
+      const viewerJs = require('../../viewer.js');
+
+      assert.ok(viewerHtml.includes('id="search-bar"'), 'search-bar element missing');
+      assert.ok(viewerHtml.includes('id="btn-export-full-txt"'), 'btn-export-full-txt element missing');
+      assert.strictEqual(typeof viewerJs.exportFullPdfText, 'function');
+      assert.strictEqual(typeof viewerJs.performSearch, 'function');
+    });
+
+    test('10.2 Global keyboard shortcut commands registered in manifest.json', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../../manifest.json'), 'utf8'));
+
+      assert.ok(manifest.commands, 'commands block missing in manifest.json');
+      assert.ok(manifest.commands['toggle-dark-mode'], 'toggle-dark-mode command missing');
+      assert.ok(manifest.commands['toggle-bionic-reading'], 'toggle-bionic-reading command missing');
+      assert.ok(manifest.commands['toggle-reading-ruler'], 'toggle-reading-ruler command missing');
+    });
+
+    test('10.3 Onboarding welcome.html page exists with shortcuts cheat sheet and file setup guide', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const welcomeHtml = fs.readFileSync(path.join(__dirname, '../../welcome.html'), 'utf8');
+
+      assert.ok(welcomeHtml.includes('Welcome to PDF Dark Mode'), 'Welcome title missing');
+      assert.ok(welcomeHtml.includes('Keyboard Shortcuts Cheat Sheet'), 'Shortcuts section missing');
+      assert.ok(welcomeHtml.includes('Allow access to file URLs'), 'File setup guide missing');
+    });
+
+    test('10.4 Settings & Data JSON Backup / Restore UI controls present in popup HTML & JS', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const popupHtml = fs.readFileSync(path.join(__dirname, '../../popup.html'), 'utf8');
+
+      assert.ok(popupHtml.includes('id="btn-backup-data"'), 'btn-backup-data missing');
+      assert.ok(popupHtml.includes('id="btn-restore-trigger"'), 'btn-restore-trigger missing');
+      assert.ok(popupHtml.includes('id="lang-selector"'), 'lang-selector missing');
+    });
+  });
+
 });
+
 

@@ -1421,6 +1421,13 @@ function setupEventListeners() {
     }
   });
 
+  // --- SEARCH BAR OVERLAY EVENT LISTENERS (Ctrl+F) ---
+  setupSearchOverlayListeners();
+
+  // --- GLOBAL KEYBOARD NAVIGATION LISTENERS ---
+  setupKeyboardShortcuts();
+
+
   // Next Page
   btnNextPage.addEventListener('click', () => {
     const currPage = parseInt(currentPageEl.textContent);
@@ -1986,6 +1993,166 @@ async function exportFullPdfText() {
   triggerFileDownload(`${docName}_fulltext.txt`, content, 'text/plain');
 }
 
+let searchMatches = [];
+let activeMatchIdx = -1;
+
+function setupSearchOverlayListeners() {
+  if (typeof document === 'undefined') return;
+  const searchBar = document.getElementById('search-bar');
+  const searchInput = document.getElementById('search-input');
+  const btnPrev = document.getElementById('btn-search-prev');
+  const btnNext = document.getElementById('btn-search-next');
+  const btnClose = document.getElementById('btn-close-search');
+
+  if (!searchBar || !searchInput) return;
+
+  searchInput.addEventListener('input', () => {
+    performSearch(searchInput.value.trim());
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        navigateSearchMatch(-1);
+      } else {
+        navigateSearchMatch(1);
+      }
+    } else if (e.key === 'Escape') {
+      closeSearchBar();
+    }
+  });
+
+  if (btnPrev) btnPrev.addEventListener('click', () => navigateSearchMatch(-1));
+  if (btnNext) btnNext.addEventListener('click', () => navigateSearchMatch(1));
+  if (btnClose) btnClose.addEventListener('click', closeSearchBar);
+}
+
+function openSearchBar() {
+  if (typeof document === 'undefined') return;
+  const searchBar = document.getElementById('search-bar');
+  const searchInput = document.getElementById('search-input');
+  if (searchBar) {
+    searchBar.classList.remove('hidden');
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.select();
+    }
+  }
+}
+
+function closeSearchBar() {
+  if (typeof document === 'undefined') return;
+  const searchBar = document.getElementById('search-bar');
+  if (searchBar) searchBar.classList.add('hidden');
+  clearSearchMatches();
+}
+
+function clearSearchMatches() {
+  if (typeof document === 'undefined') return;
+  const oldMatches = document.querySelectorAll('.search-match');
+  oldMatches.forEach(el => {
+    const parent = el.parentNode;
+    if (parent) {
+      parent.replaceChild(document.createTextNode(el.textContent), el);
+      parent.normalize();
+    }
+  });
+  searchMatches = [];
+  activeMatchIdx = -1;
+  updateSearchCountUI();
+}
+
+function performSearch(query) {
+  clearSearchMatches();
+  if (!query || query.length === 0) return;
+
+  const textSpans = document.querySelectorAll('.textLayer span');
+  const lowerQuery = query.toLowerCase();
+
+  textSpans.forEach(span => {
+    const text = span.textContent;
+    const lowerText = text.toLowerCase();
+    if (lowerText.includes(lowerQuery)) {
+      const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+      span.innerHTML = '';
+      parts.forEach(part => {
+        if (part.toLowerCase() === lowerQuery) {
+          const matchSpan = document.createElement('span');
+          matchSpan.className = 'search-match';
+          matchSpan.textContent = part;
+          span.appendChild(matchSpan);
+          searchMatches.push(matchSpan);
+        } else {
+          span.appendChild(document.createTextNode(part));
+        }
+      });
+    }
+  });
+
+  if (searchMatches.length > 0) {
+    activeMatchIdx = 0;
+    highlightActiveMatch();
+  } else {
+    updateSearchCountUI();
+  }
+}
+
+function navigateSearchMatch(direction) {
+  if (searchMatches.length === 0) return;
+  activeMatchIdx += direction;
+  if (activeMatchIdx >= searchMatches.length) activeMatchIdx = 0;
+  if (activeMatchIdx < 0) activeMatchIdx = searchMatches.length - 1;
+  highlightActiveMatch();
+}
+
+function highlightActiveMatch() {
+  searchMatches.forEach(m => m.classList.remove('active-match'));
+  if (activeMatchIdx >= 0 && activeMatchIdx < searchMatches.length) {
+    const target = searchMatches[activeMatchIdx];
+    target.classList.add('active-match');
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  updateSearchCountUI();
+}
+
+function updateSearchCountUI() {
+  if (typeof document === 'undefined') return;
+  const countEl = document.getElementById('search-count');
+  if (!countEl) return;
+  if (searchMatches.length === 0) {
+    countEl.textContent = '0 / 0';
+  } else {
+    countEl.textContent = `${activeMatchIdx + 1} / ${searchMatches.length}`;
+  }
+}
+
+function setupKeyboardShortcuts() {
+  if (typeof document === 'undefined') return;
+
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      openSearchBar();
+      return;
+    }
+
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+      return;
+    }
+
+    if (e.key === 'j' || e.key === 'J') {
+      const currPage = parseInt(currentPageEl?.textContent || '1');
+      if (pdfDoc && currPage < pdfDoc.numPages) navigateToPage(currPage + 1);
+    } else if (e.key === 'k' || e.key === 'K') {
+      const currPage = parseInt(currentPageEl?.textContent || '1');
+      if (currPage > 1) navigateToPage(currPage - 1);
+    }
+  });
+}
+
+
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
@@ -2012,8 +2179,13 @@ if (typeof module !== 'undefined' && module.exports) {
     applyBionicReadingToViewer,
     updateReadingRuler,
     applyFocusSettings,
-    exportFullPdfText
+    exportFullPdfText,
+    openSearchBar,
+    closeSearchBar,
+    performSearch,
+    setupKeyboardShortcuts
   };
 }
+
 
 

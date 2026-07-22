@@ -315,6 +315,22 @@
               </label>
             </div>
           </div>
+        <section class="section">
+          <h2 class="section-title">Data Backup & Language</h2>
+          <div class="toggle-panel" style="flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 12px; color: var(--text-secondary);">Language / 語言</span>
+              <select id="lang-selector" style="background: #181825; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px; padding: 2px 6px; font-size: 11px;">
+                <option value="en">English</option>
+                <option value="zh-TW">繁體中文</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 6px;">
+              <button id="btn-backup-data" class="export-btn export-btn-primary" style="flex: 1; font-size: 11px; padding: 6px;">💾 Backup Data (.json)</button>
+              <button id="btn-restore-trigger" class="export-btn export-btn-secondary" style="flex: 1; font-size: 11px; padding: 6px;">📥 Restore Data</button>
+              <input type="file" id="file-input-restore" accept=".json" style="display: none;" />
+            </div>
+          </div>
         </section>
       </div>
     </main>
