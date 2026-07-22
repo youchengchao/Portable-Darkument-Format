@@ -2598,20 +2598,21 @@ function loadPdfFileFromDisk(file) {
     const arrayBuffer = evt.target.result;
     const activeTab = TabManager.getActiveTab();
     if (!activeTab || activeTab.isLoaded || activeTab.url) {
-      const tab = TabManager.createTab(file.name, file.name, arrayBuffer);
+      // Opening a new tab for this file — do NOT set url to filename
+      // so switchToTab uses the arrayBuffer path instead of loadPdf(url)
+      const tab = TabManager.createTab('', file.name, arrayBuffer);
       tab.arrayBuffer = arrayBuffer;
       tab.title = file.name;
-      tab.url = file.name;
-      const dropzone = typeof document !== 'undefined' ? document.getElementById('dropzone-overlay') : null;
-      if (dropzone) dropzone.classList.add('hidden');
-      loadPdfFromData(arrayBuffer);
+      // switchToTab (called by createTab) will detect arrayBuffer and
+      // call loadPdfFromData — no need to call it again here
     } else {
+      // Reuse the current empty tab
       activeTab.title = file.name;
-      activeTab.url = file.name;
+      activeTab.url = '';
       activeTab.arrayBuffer = arrayBuffer;
-      pdfUrl = file.name;
+      pdfUrl = '';
       if (docTitle) docTitle.textContent = file.name;
-      document.title = file.name;
+      if (typeof document !== 'undefined') document.title = file.name;
       TabManager.renderTabBarUI();
       const dropzone = typeof document !== 'undefined' ? document.getElementById('dropzone-overlay') : null;
       if (dropzone) dropzone.classList.add('hidden');
@@ -3120,6 +3121,8 @@ function setupFileOpenAndDragDropListeners() {
       if (e.target.files && e.target.files[0]) {
         loadPdfFileFromDisk(e.target.files[0]);
       }
+      // Reset input value so re-selecting the same file triggers 'change' again
+      e.target.value = '';
     });
   }
 
