@@ -292,8 +292,42 @@ function updateContentReadingRuler(enabled, height = 40) {
 // Initial application
 if (typeof chrome !== 'undefined' && chrome.storage && isPdf()) {
   chrome.storage.local.get(null, (settings) => {
+    if (settings && settings.active === false) {
+      return;
+    }
     if (window.location.href.startsWith('file:///')) {
-      applyClassicTheme({ ...settings, mode: 'classic' });
+      // Read file in file:/// tab origin (bypasses CORS restrictions)
+      try {
+        fetch(window.location.href)
+          .then(res => res.arrayBuffer())
+          .then(buffer => {
+            const uint8 = new Uint8Array(buffer);
+            let binary = '';
+            const chunkSize = 8192;
+            for (let i = 0; i < uint8.length; i += chunkSize) {
+              binary += String.fromCharCode.apply(null, uint8.subarray(i, i + chunkSize));
+            }
+            const base64 = btoa(binary);
+            const filename = decodeURIComponent(window.location.pathname.substring(window.location.pathname.lastIndexOf('/') + 1));
+            
+            chrome.storage.local.set({
+              pendingLocalPdf: {
+                name: filename,
+                data: base64,
+                timestamp: Date.now()
+              }
+            }, () => {
+              if (chrome.runtime && chrome.runtime.getURL) {
+                window.location.href = chrome.runtime.getURL('viewer.html') + '?file=pending_local';
+              }
+            });
+          })
+          .catch(() => {
+            applyClassicTheme(settings);
+          });
+      } catch (e) {
+        applyClassicTheme(settings);
+      }
     } else if (settings.active && settings.mode === 'enhanced') {
       chrome.runtime.sendMessage({ action: 'pdf_detected', url: window.location.href });
     } else {
@@ -301,6 +335,7 @@ if (typeof chrome !== 'undefined' && chrome.storage && isPdf()) {
     }
   });
 }
+
 
 // Listen for updates from the popup controls
 if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {

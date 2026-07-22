@@ -53,14 +53,34 @@ if (typeof document !== 'undefined' && document.addEventListener) {
     const urlParams = new URLSearchParams(window.location.search);
     pdfUrl = urlParams.get('file');
 
-    if (!pdfUrl) {
-      if (loadingSpinner) loadingSpinner.style.display = 'none';
-      const dropzone = document.getElementById('dropzone-overlay');
-      if (dropzone) dropzone.classList.remove('hidden');
+    if (pdfUrl === 'pending_local') {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get(null, (res) => {
+          applyThemeFilters(res);
+          applyFocusSettings(res);
+          if (res && res.pendingLocalPdf && res.pendingLocalPdf.data) {
+            const filename = res.pendingLocalPdf.name || 'Local PDF Document';
+            if (docTitle) docTitle.textContent = filename;
+            document.title = filename;
+            
+            const binaryString = atob(res.pendingLocalPdf.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            if (loadingSpinner) loadingSpinner.style.display = 'none';
+            loadPdfFromData(bytes.buffer);
+          } else {
+            if (loadingSpinner) loadingSpinner.style.display = 'none';
+            const dropzone = document.getElementById('dropzone-overlay');
+            if (dropzone) dropzone.classList.remove('hidden');
+          }
+        });
+      }
       setupEventListeners();
-      setupFileOpenAndDragDropListeners();
       return;
     }
+
 
 
     // Set document title
