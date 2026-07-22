@@ -1496,14 +1496,15 @@ function setupEventListeners() {
     });
   }
 
-  // Open settings extension popup trigger
-  btnSettings.addEventListener('click', () => {
-    if (chrome.runtime && chrome.runtime.sendMessage) {
-      // Chrome extension popup doesn't open via programmatic APIs directly in standard tabs,
-      // but we can alert the user to click the extension icon.
-      alert('To adjust settings, click the PDF Dark extension icon in the toolbar.');
-    }
-  });
+  // Open native in-viewer Settings Modal
+  if (btnSettings) {
+    btnSettings.addEventListener('click', () => {
+      openSettingsModal();
+    });
+  }
+
+  setupSettingsModalListeners();
+
 
   // Listen to changes in chrome.storage.local
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -2154,6 +2155,93 @@ function setupKeyboardShortcuts() {
 
 
 
+function openSettingsModal() {
+  if (typeof document === 'undefined') return;
+  const modal = document.getElementById('settings-modal');
+  if (!modal) return;
+
+  chrome.storage.local.get(null, (settings) => {
+    const s = sanitizeSettings(settings);
+    const themeSelect = document.getElementById('viewer-theme-select');
+    const sliderBright = document.getElementById('viewer-slider-brightness');
+    const sliderContrast = document.getElementById('viewer-slider-contrast');
+    const brightVal = document.getElementById('viewer-bright-val');
+    const contrastVal = document.getElementById('viewer-contrast-val');
+    const protectToggle = document.getElementById('viewer-protect-toggle');
+    const bionicToggle = document.getElementById('viewer-bionic-toggle');
+    const rulerToggle = document.getElementById('viewer-ruler-toggle');
+
+    if (themeSelect) themeSelect.value = s.theme || 'oled';
+    if (sliderBright) sliderBright.value = s.brightness;
+    if (brightVal) brightVal.textContent = `${s.brightness}%`;
+    if (sliderContrast) sliderContrast.value = s.contrast;
+    if (contrastVal) contrastVal.textContent = `${s.contrast}%`;
+    if (protectToggle) protectToggle.checked = s.protectDiagrams !== false;
+    if (bionicToggle) bionicToggle.checked = Boolean(settings.bionicReading);
+    if (rulerToggle) rulerToggle.checked = Boolean(settings.readingRuler);
+
+    modal.classList.remove('hidden');
+  });
+}
+
+function closeSettingsModal() {
+  if (typeof document === 'undefined') return;
+  const modal = document.getElementById('settings-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function setupSettingsModalListeners() {
+  if (typeof document === 'undefined') return;
+  const btnClose = document.getElementById('btn-close-settings-modal');
+  const backdrop = document.getElementById('settings-modal-backdrop');
+  const themeSelect = document.getElementById('viewer-theme-select');
+  const sliderBright = document.getElementById('viewer-slider-brightness');
+  const sliderContrast = document.getElementById('viewer-slider-contrast');
+  const brightVal = document.getElementById('viewer-bright-val');
+  const contrastVal = document.getElementById('viewer-contrast-val');
+  const protectToggle = document.getElementById('viewer-protect-toggle');
+  const bionicToggle = document.getElementById('viewer-bionic-toggle');
+  const rulerToggle = document.getElementById('viewer-ruler-toggle');
+
+  if (btnClose) btnClose.addEventListener('click', closeSettingsModal);
+  if (backdrop) backdrop.addEventListener('click', closeSettingsModal);
+
+  if (themeSelect) {
+    themeSelect.addEventListener('change', (e) => {
+      chrome.storage.local.set({ theme: e.target.value });
+    });
+  }
+  if (sliderBright) {
+    sliderBright.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      if (brightVal) brightVal.textContent = `${val}%`;
+      chrome.storage.local.set({ brightness: val });
+    });
+  }
+  if (sliderContrast) {
+    sliderContrast.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      if (contrastVal) contrastVal.textContent = `${val}%`;
+      chrome.storage.local.set({ contrast: val });
+    });
+  }
+  if (protectToggle) {
+    protectToggle.addEventListener('change', (e) => {
+      chrome.storage.local.set({ protectDiagrams: e.target.checked });
+    });
+  }
+  if (bionicToggle) {
+    bionicToggle.addEventListener('change', (e) => {
+      chrome.storage.local.set({ bionicReading: e.target.checked });
+    });
+  }
+  if (rulerToggle) {
+    rulerToggle.addEventListener('change', (e) => {
+      chrome.storage.local.set({ readingRuler: e.target.checked });
+    });
+  }
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     clampNumber,
@@ -2183,9 +2271,12 @@ if (typeof module !== 'undefined' && module.exports) {
     openSearchBar,
     closeSearchBar,
     performSearch,
-    setupKeyboardShortcuts
+    setupKeyboardShortcuts,
+    openSettingsModal,
+    closeSettingsModal
   };
 }
+
 
 
 

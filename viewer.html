@@ -262,9 +262,60 @@
         <a href="https://buymeacoffee.com" target="_blank" class="toast-btn toast-btn-primary">Buy Me a Coffee ☕</a>
         <a href="https://github.com/sponsors" target="_blank" class="toast-btn toast-btn-secondary">GitHub Sponsors 💖</a>
       </div>
+    <!-- Native In-Viewer Settings Modal -->
+    <div id="settings-modal" class="settings-modal hidden">
+      <div class="settings-modal-backdrop" id="settings-modal-backdrop"></div>
+      <div class="settings-modal-content">
+        <div class="modal-header">
+          <h3>⚙️ Viewer Settings</h3>
+          <button id="btn-close-settings-modal" class="btn-close" title="Close Settings">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="setting-row">
+            <span>Color Theme</span>
+            <select id="viewer-theme-select">
+              <option value="oled">OLED Pure Black</option>
+              <option value="sepia">Warm Sepia</option>
+              <option value="slate">Slate Blue</option>
+              <option value="mono">Mono Contrast</option>
+              <option value="classic">Classic Invert</option>
+            </select>
+          </div>
+          <div class="setting-row">
+            <span>Brightness (<span id="viewer-bright-val">90%</span>)</span>
+            <input type="range" id="viewer-slider-brightness" min="50" max="150" value="90">
+          </div>
+          <div class="setting-row">
+            <span>Contrast (<span id="viewer-contrast-val">100%</span>)</span>
+            <input type="range" id="viewer-slider-contrast" min="50" max="150" value="100">
+          </div>
+          <div class="setting-row">
+            <span>Diagram Protection</span>
+            <label class="switch">
+              <input type="checkbox" id="viewer-protect-toggle" checked>
+              <span class="slider round"></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <span>Bionic Reading</span>
+            <label class="switch">
+              <input type="checkbox" id="viewer-bionic-toggle">
+              <span class="slider round"></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <span>Reading Ruler</span>
+            <label class="switch">
+              <input type="checkbox" id="viewer-ruler-toggle">
+              <span class="slider round"></span>
+            </label>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
   <script src="viewer.js"></script>
 </body>
 </html>
+
 
