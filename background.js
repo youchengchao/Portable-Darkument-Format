@@ -1,5 +1,9 @@
+// Detect global scope safely across Service Worker (Chrome) and Background Script (Firefox)
+const globalScope = typeof self !== 'undefined' ? self : globalThis;
+
 // Initialize settings on installation & open Welcome Page
-chrome.runtime.onInstalled.addListener((details) => {
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onInstalled) {
+  chrome.runtime.onInstalled.addListener((details) => {
   if (details && details.reason === 'install') {
     if (chrome.tabs && chrome.runtime.getURL) {
       chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
@@ -52,9 +56,10 @@ chrome.runtime.onInstalled.addListener((details) => {
     }
   });
 });
+}
 
 // Handle Global Keyboard Shortcut Commands
-if (typeof chrome !== 'undefined' && chrome.commands) {
+if (typeof chrome !== 'undefined' && chrome.commands && chrome.commands.onCommand) {
   chrome.commands.onCommand.addListener((command) => {
     if (command === 'toggle-dark-mode') {
       chrome.storage.local.get('active', (res) => {
@@ -106,139 +111,172 @@ function redirectToViewer(tabId, url) {
 }
 
 // 1. Intercept via webNavigation (URL checks - catches web PDF URLs)
-chrome.webNavigation.onBeforeNavigate.addListener((details) => {
-
-
-  // Only target main frame page load
-  if (details.frameId === 0 && details.url) {
-    chrome.storage.local.get(['active', 'mode'], (settings) => {
-      if (settings.active && settings.mode === 'enhanced' && isPdfUrl(details.url)) {
-        redirectToViewer(details.tabId, details.url);
-      }
-    });
-  }
-});
-
-// 2. Intercept via webRequest Content-Type detection (for dynamic PDFs)
-chrome.webRequest.onHeadersReceived.addListener(
-  (details) => {
-    // Only care about main frame document loads
-    if (details.tabId !== -1 && details.type === 'main_frame' && details.url) {
-      const contentTypeHeader = details.responseHeaders.find(
-        h => h.name.toLowerCase() === 'content-type'
-      );
-      if (contentTypeHeader && contentTypeHeader.value.toLowerCase().includes('application/pdf')) {
-        chrome.storage.local.get(['active', 'mode'], (settings) => {
-          if (settings.active && settings.mode === 'enhanced') {
-            redirectToViewer(details.tabId, details.url);
-          }
-        });
-      }
-    }
-  },
-  { urls: ['<all_urls>'] },
-  ['responseHeaders']
-);
-
-// 3. Messaging receiver
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'pdf_detected') {
-    const tabId = sender.tab ? sender.tab.id : null;
-    if (tabId) {
+if (typeof chrome !== 'undefined' && chrome.webNavigation && chrome.webNavigation.onBeforeNavigate) {
+  chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+    // Only target main frame page load
+    if (details.frameId === 0 && details.url) {
       chrome.storage.local.get(['active', 'mode'], (settings) => {
-        if (settings.active && settings.mode === 'enhanced') {
-          redirectToViewer(tabId, message.url);
+        if (settings.active && settings.mode === 'enhanced' && isPdfUrl(details.url)) {
+          redirectToViewer(details.tabId, details.url);
         }
       });
     }
-  } else if (message.action === 'get_settings') {
-    chrome.storage.local.get(null, (settings) => {
-      sendResponse(settings);
-    });
-    return true;
-  } else if (message.action === 'update_settings') {
-    if (message.settings) {
-      chrome.storage.local.set(message.settings, () => {
-        sendResponse({ success: true });
+  });
+}
+
+// 2. Intercept via webRequest Content-Type detection (for dynamic PDFs)
+if (typeof chrome !== 'undefined' && chrome.webRequest && chrome.webRequest.onHeadersReceived) {
+  chrome.webRequest.onHeadersReceived.addListener(
+    (details) => {
+      // Only care about main frame document loads
+      if (details.tabId !== -1 && details.type === 'main_frame' && details.url) {
+        const contentTypeHeader = details.responseHeaders.find(
+          h => h.name.toLowerCase() === 'content-type'
+        );
+        if (contentTypeHeader && contentTypeHeader.value.toLowerCase().includes('application/pdf')) {
+          chrome.storage.local.get(['active', 'mode'], (settings) => {
+            if (settings.active && settings.mode === 'enhanced') {
+              redirectToViewer(details.tabId, details.url);
+            }
+          });
+        }
+      }
+    },
+    { urls: ['<all_urls>'] },
+    ['responseHeaders']
+  );
+}
+
+// 3. Messaging receiver
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'pdf_detected') {
+      const tabId = sender.tab ? sender.tab.id : null;
+      if (tabId) {
+        chrome.storage.local.get(['active', 'mode'], (settings) => {
+          if (settings.active && settings.mode === 'enhanced') {
+            redirectToViewer(tabId, message.url);
+          }
+        });
+      }
+    } else if (message.action === 'get_settings') {
+      chrome.storage.local.get(null, (settings) => {
+        sendResponse(settings);
       });
       return true;
-    }
-  } else if (message.action === 'save_position') {
-    if (message.url) {
-      chrome.storage.local.get('readingPositions', (result) => {
-        const positions = (typeof result.readingPositions === 'object' && result.readingPositions !== null)
-          ? result.readingPositions
-          : {};
-        positions[message.url] = {
-          page: message.page || 1,
-          scrollTop: Math.max(0, message.scrollTop || 0),
-          scrollLeft: Math.max(0, message.scrollLeft || 0),
-          zoom: message.zoom || 1.0,
-          updatedAt: Date.now()
-        };
-        chrome.storage.local.set({ readingPositions: positions }, () => {
+    } else if (message.action === 'update_settings') {
+      if (message.settings) {
+        chrome.storage.local.set(message.settings, () => {
           sendResponse({ success: true });
         });
-      });
+        return true;
+      }
+    } else if (message.action === 'save_position') {
+      if (message.url) {
+        chrome.storage.local.get('readingPositions', (result) => {
+          const positions = (typeof result.readingPositions === 'object' && result.readingPositions !== null)
+            ? result.readingPositions
+            : {};
+          positions[message.url] = {
+            page: message.page || 1,
+            scrollTop: Math.max(0, message.scrollTop || 0),
+            scrollLeft: Math.max(0, message.scrollLeft || 0),
+            zoom: message.zoom || 1.0,
+            updatedAt: Date.now()
+          };
+          chrome.storage.local.set({ readingPositions: positions }, () => {
+            sendResponse({ success: true });
+          });
+        });
+        return true;
+      }
+    } else if (message.action === 'read_file_bytes') {
+      handleReadFileBytes(message, sender, sendResponse);
+      return true;
+    } else if (message.action === 'track_reading') {
+      handleTrackReading(message, sendResponse);
+      return true;
+    } else if (message.action === 'record_page_view') {
+      handleTrackReading({ action: 'track_reading', seconds: 0, pages: 1 }, sendResponse);
+      return true;
+    } else if (message.action === 'record_reading_time') {
+      const secs = typeof message.seconds === 'number' ? message.seconds : ((message.minutes || 1) * 60);
+      handleTrackReading({ action: 'track_reading', seconds: secs, pages: 0 }, sendResponse);
       return true;
     }
-  } else if (message.action === 'read_file_bytes') {
-    handleReadFileBytes(message, sender, sendResponse);
-    return true;
-  } else if (message.action === 'track_reading') {
-    handleTrackReading(message, sendResponse);
-    return true;
-  } else if (message.action === 'record_page_view') {
-    handleTrackReading({ action: 'track_reading', seconds: 0, pages: 1 }, sendResponse);
-    return true;
-  } else if (message.action === 'record_reading_time') {
-    const secs = typeof message.seconds === 'number' ? message.seconds : ((message.minutes || 1) * 60);
-    handleTrackReading({ action: 'track_reading', seconds: secs, pages: 0 }, sendResponse);
-    return true;
-  }
-});
+  });
+}
 
 // Handle reading file bytes for local PDF access in viewer.html
 function handleReadFileBytes(message, sender, sendResponse) {
   const url = message ? message.url : null;
-  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get('pendingLocalPdf', (res) => {
+  const storageApi = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local)
+    ? chrome.storage.local
+    : (typeof browser !== 'undefined' && browser.storage && browser.storage.local ? browser.storage.local : null);
+
+  const tryExecuteScript = (targetUrl) => {
+    const tabId = sender && sender.tab ? sender.tab.id : null;
+    if (tabId && typeof chrome !== 'undefined' && chrome.scripting && chrome.scripting.executeScript) {
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        func: (tUrl) => {
+          return fetch(tUrl || window.location.href)
+            .then(r => r.arrayBuffer())
+            .then(buf => {
+              const bytes = new Uint8Array(buf);
+              let binary = '';
+              const chunkSize = 0x8000;
+              for (let i = 0; i < bytes.length; i += chunkSize) {
+                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+              }
+              return btoa(binary);
+            });
+        },
+        args: [targetUrl]
+      }, (results) => {
+        if ((typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.lastError) || !results || !results[0] || !results[0].result) {
+          sendResponse({ success: false, error: (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.lastError) ? chrome.runtime.lastError.message : 'executeScript failed' });
+        } else {
+          sendResponse({ success: true, data: results[0].result });
+        }
+      });
+    } else {
+      sendResponse({ success: false, error: 'File data unavailable' });
+    }
+  };
+
+  const processFetch = (targetUrl) => {
+    if (targetUrl && typeof fetch === 'function') {
+      fetch(targetUrl)
+        .then(r => r.arrayBuffer())
+        .then(buf => {
+          const bytes = new Uint8Array(buf);
+          let binary = '';
+          const chunkSize = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+          }
+          const base64 = typeof btoa === 'function' ? btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
+          sendResponse({ success: true, data: base64 });
+        })
+        .catch(() => {
+          tryExecuteScript(targetUrl);
+        });
+    } else {
+      tryExecuteScript(targetUrl);
+    }
+  };
+
+  if (storageApi) {
+    storageApi.get('pendingLocalPdf', (res) => {
       if (res && res.pendingLocalPdf && res.pendingLocalPdf.data && (!url || res.pendingLocalPdf.url === url)) {
         sendResponse({ success: true, data: res.pendingLocalPdf.data });
         return;
       }
-
-      const tabId = sender && sender.tab ? sender.tab.id : null;
-      if (tabId && typeof chrome !== 'undefined' && chrome.scripting && chrome.scripting.executeScript) {
-        chrome.scripting.executeScript({
-          target: { tabId: tabId },
-          func: (targetUrl) => {
-            return fetch(targetUrl || window.location.href)
-              .then(r => r.arrayBuffer())
-              .then(buf => {
-                const bytes = new Uint8Array(buf);
-                let binary = '';
-                const chunkSize = 0x8000;
-                for (let i = 0; i < bytes.length; i += chunkSize) {
-                  binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-                }
-                return btoa(binary);
-              });
-          },
-          args: [url]
-        }, (results) => {
-          if (chrome.runtime.lastError || !results || !results[0] || !results[0].result) {
-            sendResponse({ success: false, error: chrome.runtime.lastError ? chrome.runtime.lastError.message : 'executeScript failed' });
-          } else {
-            sendResponse({ success: true, data: results[0].result });
-          }
-        });
-      } else {
-        sendResponse({ success: false, error: 'File data unavailable' });
-      }
+      processFetch(url);
     });
   } else {
-    sendResponse({ success: false, error: 'Storage unavailable' });
+    processFetch(url);
   }
 }
 
@@ -398,6 +436,7 @@ function updateReadingStats(pagesToAdd = 0, minutesToAdd = 0, callback) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    globalScope,
     isPdfUrl,
     redirectToViewer,
     handleTrackReading,

@@ -317,58 +317,77 @@ function handleLocalPdf(settings) {
   if (window.__pdfDarkProcessingLocal) return true;
   window.__pdfDarkProcessingLocal = true;
 
-  if (typeof fetch === 'function') {
-    fetch(href)
-      .then(res => res.arrayBuffer())
-      .then(buffer => {
-        const base64Data = arrayBufferToBase64(buffer);
-        let filename = 'Local PDF Document';
-        try {
-          const urlObj = new URL(href);
-          const segments = urlObj.pathname.split('/');
-          const lastSeg = segments[segments.length - 1];
-          if (lastSeg) {
-            filename = decodeURIComponent(lastSeg);
+  const processBase64Data = (base64Data) => {
+    let filename = 'Local PDF Document';
+    try {
+      const urlObj = new URL(href);
+      const segments = urlObj.pathname.split('/');
+      const lastSeg = segments[segments.length - 1];
+      if (lastSeg) {
+        filename = decodeURIComponent(lastSeg);
+      }
+    } catch (e) {}
+
+    const pendingData = {
+      name: filename,
+      data: base64Data,
+      url: href
+    };
+
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ pendingLocalPdf: pendingData }, () => {
+        if (chrome.runtime && chrome.runtime.lastError) {
+          console.warn('Failed to store pending local PDF data:', chrome.runtime.lastError);
+          if (typeof window !== 'undefined' && window) {
+            window.__pdfDarkProcessingLocal = false;
           }
-        } catch (e) {}
+          applyClassicTheme(settings);
+        } else if (chrome.runtime && chrome.runtime.getURL) {
+          window.location.href = chrome.runtime.getURL('viewer.html?file=pending_local');
+        }
+      });
+    } else {
+      if (typeof window !== 'undefined' && window) {
+        window.__pdfDarkProcessingLocal = false;
+      }
+      applyClassicTheme(settings);
+    }
+  };
 
-        const pendingData = {
-          name: filename,
-          data: base64Data,
-          url: href
-        };
-
-        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-          chrome.storage.local.set({ pendingLocalPdf: pendingData }, () => {
-            if (chrome.runtime && chrome.runtime.lastError) {
-              console.warn('Failed to store pending local PDF data:', chrome.runtime.lastError);
-              if (typeof window !== 'undefined' && window) {
-                window.__pdfDarkProcessingLocal = false;
-              }
-              applyClassicTheme(settings);
-            } else if (chrome.runtime && chrome.runtime.getURL) {
-              window.location.href = chrome.runtime.getURL('viewer.html?file=pending_local');
-            }
-          });
+  const handleFetchFallback = (err) => {
+    if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.sendMessage === 'function') {
+      chrome.runtime.sendMessage({ action: 'read_file_bytes', url: href }, (response) => {
+        if (response && response.success && response.data) {
+          processBase64Data(response.data);
         } else {
+          console.error('Failed to read local PDF file bytes via background:', err, response ? response.error : '');
           if (typeof window !== 'undefined' && window) {
             window.__pdfDarkProcessingLocal = false;
           }
           applyClassicTheme(settings);
         }
+      });
+    } else {
+      console.error('Failed to read local PDF file bytes:', err);
+      if (typeof window !== 'undefined' && window) {
+        window.__pdfDarkProcessingLocal = false;
+      }
+      applyClassicTheme(settings);
+    }
+  };
+
+  if (typeof fetch === 'function') {
+    fetch(href)
+      .then(res => res.arrayBuffer())
+      .then(buffer => {
+        const base64Data = arrayBufferToBase64(buffer);
+        processBase64Data(base64Data);
       })
       .catch(err => {
-        console.error('Failed to read local PDF file bytes:', err);
-        if (typeof window !== 'undefined' && window) {
-          window.__pdfDarkProcessingLocal = false;
-        }
-        applyClassicTheme(settings);
+        handleFetchFallback(err);
       });
   } else {
-    if (typeof window !== 'undefined' && window) {
-      window.__pdfDarkProcessingLocal = false;
-    }
-    applyClassicTheme(settings);
+    handleFetchFallback(new Error('Fetch API unavailable'));
   }
 
   return true;

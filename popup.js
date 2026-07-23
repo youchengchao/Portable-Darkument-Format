@@ -146,7 +146,13 @@ if (typeof document !== 'undefined') {
     renderPopupStats();
 
     // Check file access permission
-    if (typeof chrome !== 'undefined' && chrome.extension && chrome.extension.isAllowedFileSchemeAccess) {
+    if (typeof BrowserCompat !== 'undefined' && typeof BrowserCompat.isAllowedFileSchemeAccess === 'function') {
+      BrowserCompat.isAllowedFileSchemeAccess((isAllowed) => {
+        if (fileUrlWarning) {
+          fileUrlWarning.style.display = isAllowed ? 'none' : 'flex';
+        }
+      });
+    } else if (typeof chrome !== 'undefined' && chrome.extension && chrome.extension.isAllowedFileSchemeAccess) {
       chrome.extension.isAllowedFileSchemeAccess((isAllowed) => {
         if (fileUrlWarning) {
           fileUrlWarning.style.display = isAllowed ? 'none' : 'flex';

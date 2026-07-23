@@ -12,7 +12,8 @@ const suites = [
   { name: 'Tier 1 (Feature Coverage)', file: path.join(__dirname, 'unit', 'tier1-feature-coverage.test.js') },
   { name: 'Tier 2 (Boundary & Corner Cases)', file: path.join(__dirname, 'unit', 'tier2-boundary-corner.test.js') },
   { name: 'Tier 3 (Cross-Feature Combinations)', file: path.join(__dirname, 'e2e', 'tier3-cross-feature.test.js') },
-  { name: 'Tier 4 (Real-World Workloads)', file: path.join(__dirname, 'e2e', 'tier4-real-world.test.js') }
+  { name: 'Tier 4 (Real-World Workloads)', file: path.join(__dirname, 'e2e', 'tier4-real-world.test.js') },
+  { name: 'Tier 5 (Firefox Cross-Browser)', file: path.join(__dirname, 'unit', 'tier5-firefox-cross-browser.test.js') }
 ];
 
 console.log('=================================================================');

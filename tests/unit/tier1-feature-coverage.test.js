@@ -34,6 +34,7 @@ const {
   renderPopupStats
 } = require('../../popup.js');
 const { TabSession, TabManager, TTSController, ttsController } = require('../../viewer.js');
+const BrowserCompat = require('../../browser-compat.js');
 
 describe('Tier 1: Feature Coverage Test Suite', () => {
 
@@ -628,6 +629,40 @@ describe('Tier 1: Feature Coverage Test Suite', () => {
       assert.ok(popupHtml.includes('id="btn-backup-data"'), 'btn-backup-data missing');
       assert.ok(popupHtml.includes('id="btn-restore-trigger"'), 'btn-restore-trigger missing');
       assert.ok(popupHtml.includes('id="lang-selector"'), 'lang-selector missing');
+    });
+
+    test('10.5 Firefox Manifest (manifest.firefox.json) and dual background script compatibility', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const manifestChrome = JSON.parse(fs.readFileSync(path.join(__dirname, '../../manifest.json'), 'utf8'));
+      const manifestFirefox = JSON.parse(fs.readFileSync(path.join(__dirname, '../../manifest.firefox.json'), 'utf8'));
+      const background = require('../../background.js');
+
+      assert.strictEqual(manifestFirefox.manifest_version, 3, 'manifest_version must be 3');
+      assert.strictEqual(manifestFirefox.name, 'PDF Dark Mode - High Contrast Reader', 'Firefox manifest name mismatch');
+      assert.strictEqual(manifestFirefox.version, '2.4.0', 'Firefox manifest version mismatch');
+      assert.strictEqual(manifestFirefox.description, manifestChrome.description, 'Description must match manifest.json');
+      assert.deepStrictEqual(manifestFirefox.browser_specific_settings, {
+        gecko: {
+          id: 'pdf-dark-mode@extension.org',
+          strict_min_version: '109.0'
+        }
+      }, 'browser_specific_settings mismatch');
+      assert.deepStrictEqual(manifestFirefox.background, { scripts: ['background.js'] }, 'background.scripts mismatch');
+      
+      const requiredPermissions = ['storage', 'scripting', 'activeTab', 'webNavigation', 'webRequest', 'alarms', 'unlimitedStorage'];
+      requiredPermissions.forEach(perm => {
+        assert.ok(manifestFirefox.permissions.includes(perm), `Missing permission: ${perm}`);
+      });
+      assert.ok(manifestFirefox.host_permissions.includes('<all_urls>'), 'Missing <all_urls> host permission');
+      assert.ok(manifestFirefox.host_permissions.includes('file:///*'), 'Missing file:///* host permission');
+
+      assert.ok(manifestFirefox.action, 'action section missing');
+      assert.ok(manifestFirefox.content_scripts, 'content_scripts section missing');
+      assert.ok(manifestFirefox.web_accessible_resources, 'web_accessible_resources section missing');
+      assert.ok(manifestFirefox.icons, 'icons section missing');
+
+      assert.ok(background.globalScope, 'globalScope is exported from background.js');
     });
   });
 
@@ -1394,6 +1429,87 @@ describe('Tier 1: Feature Coverage Test Suite', () => {
       assert.strictEqual(controller.currentIndex, 1, 'navigates back to sentence 1 on prev()');
 
       controller.stop();
+    });
+  });
+
+  // =========================================================================
+  // Module 13: Cross-browser Compatibility Layer (BrowserCompat) (5 Tests)
+  // =========================================================================
+  describe('Module 13: Cross-browser Compatibility Layer (BrowserCompat)', () => {
+    test('13.1 Polyfills globalThis.browser to globalThis.chrome', () => {
+      assert.ok(globalThis.browser, 'globalThis.browser is polyfilled');
+      assert.strictEqual(globalThis.browser, globalThis.chrome, 'globalThis.browser matches chrome');
+    });
+
+    test('13.2 BrowserCompat.isAllowedFileSchemeAccess supports callback and Promise', async () => {
+      let cbCalled = false;
+      let cbVal = null;
+      const promiseVal = await BrowserCompat.isAllowedFileSchemeAccess((res) => {
+        cbCalled = true;
+        cbVal = res;
+      });
+      assert.strictEqual(cbCalled, true, 'callback was called');
+      assert.strictEqual(typeof cbVal, 'boolean', 'callback received boolean');
+      assert.strictEqual(typeof promiseVal, 'boolean', 'promise resolved boolean');
+    });
+
+    test('13.3 BrowserCompat.storage.local get, set, remove support callbacks and Promises', async () => {
+      await BrowserCompat.storage.local.set({ compatTestKey: 'compatValue' });
+      const resPromise = await BrowserCompat.storage.local.get('compatTestKey');
+      assert.strictEqual(resPromise.compatTestKey, 'compatValue', 'set & get promise succeeded');
+
+      let cbRes = null;
+      await BrowserCompat.storage.local.get('compatTestKey', (res) => {
+        cbRes = res;
+      });
+      assert.strictEqual(cbRes.compatTestKey, 'compatValue', 'get callback succeeded');
+
+      await BrowserCompat.storage.local.remove('compatTestKey');
+      const resAfterRemove = await BrowserCompat.storage.local.get('compatTestKey');
+      assert.strictEqual(resAfterRemove.compatTestKey, undefined, 'remove succeeded');
+    });
+
+    test('13.4 BrowserCompat.protectUtterance guards utterance in globalThis.__activeUtteranceGuard', () => {
+      const mockUtterance = {
+        text: 'Test speech guard',
+        onend: null,
+        onerror: null
+      };
+
+      BrowserCompat.protectUtterance(mockUtterance);
+      assert.ok(globalThis.__activeUtteranceGuard, 'guard set initialized');
+      assert.ok(globalThis.__activeUtteranceGuard.has(mockUtterance), 'utterance bound to guard');
+
+      // Trigger onend cleanup
+      if (typeof mockUtterance.onend === 'function') {
+        mockUtterance.onend();
+      }
+      assert.strictEqual(globalThis.__activeUtteranceGuard.has(mockUtterance), false, 'utterance cleaned up on end');
+    });
+
+    test('13.5 BrowserCompat.protectUtterance supports addEventListener and preserves custom handlers', () => {
+      let customEndFired = false;
+      let listeners = {};
+      const mockUtterance = {
+        text: 'EventListener test',
+        addEventListener(event, handler) {
+          listeners[event] = handler;
+        },
+        onend: () => {
+          customEndFired = true;
+        }
+      };
+
+      BrowserCompat.protectUtterance(mockUtterance);
+      assert.ok(globalThis.__activeUtteranceGuard.has(mockUtterance), 'utterance bound to guard');
+
+      // Fire listener or handler
+      if (listeners['end']) {
+        listeners['end']();
+      }
+      assert.strictEqual(globalThis.__activeUtteranceGuard.has(mockUtterance), false, 'cleaned up via addEventListener');
+      mockUtterance.onend();
+      assert.strictEqual(customEndFired, true, 'custom onend handler preserved');
     });
   });
 });

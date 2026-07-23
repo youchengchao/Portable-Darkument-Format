@@ -2955,7 +2955,10 @@ class TTSController {
 
     if (!UtteranceClass) return;
 
-    const utt = new UtteranceClass(sentence.text);
+    let utt = new UtteranceClass(sentence.text);
+    if (typeof BrowserCompat !== 'undefined' && typeof BrowserCompat.protectUtterance === 'function') {
+      utt = BrowserCompat.protectUtterance(utt);
+    }
     utt.rate = this.rate;
     utt.pitch = this.pitch;
     if (this.selectedVoice) {
